@@ -1,5 +1,4 @@
 /*
-CISCO BOARDROOM VERSION 2.0 - AUXILIARY CODEC MACRO
 Copyright (c) 2021 Cisco and/or its affiliates.
 This software is licensed to you under the terms of the Cisco Sample
 Code License, Version 1.1 (the "License"). You may obtain a copy of the
@@ -11,6 +10,33 @@ reserved. Unless required by applicable law or agreed to separately in
 writing, software distributed under the License is distributed on an "AS
 IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express
 or implied.
+*
+* Repository: gve_devnet_webex_devices_executive_room_multi_aux_switching_macro
+* Macro file: aux_codec
+* Version: 1.0.3
+* Released: May 1, 2023
+* Latest RoomOS version tested: 11.4
+*
+* Macro Author:      	Gerardo Chaves
+*                    	Technical Solutions Architect
+*                    	gchaves@cisco.com
+*                    	Cisco Systems
+*
+* Consulting Engineer: Robert(Bobby) McGonigle Jr
+*                    	 Technical Marketing Engineer
+*                    	 bomcgoni@cisco.com
+*                    	 Cisco Systems
+* 
+*    
+* 
+*    As a macro, the features and functions of this webex devices executive room voice activated 
+*    switching macro are not supported by Cisco TAC
+* 
+*    Hardware and Software support are provided by their respective manufacturers 
+*      and the service agreements they offer
+*    
+*    Should you need assistance with this macro, reach out to your Cisco sales representative
+*    so they can engage the GVE DevNet team.
 */
 
 import xapi from 'xapi';

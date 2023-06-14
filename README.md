@@ -2,6 +2,12 @@
 
 Webex Room Device macro to switch input source to camera pointed in the direction of the area of the room that has audio activity as detected by the table microphones in the zone.
 
+6/14/23 Updates:
+
+- Added versioning in the macro comments (currently at version 1.0.3)
+- Added event handling for PresenterTrack so automation with automatically turn off and then resume if you invoke presenterTrack during a call. No need to do it manually.
+- Changes to GMM connection object instantiation to improve reliability
+
 ## Contacts
 
 - Gerardo Chaves (gchaves@cisco.com)

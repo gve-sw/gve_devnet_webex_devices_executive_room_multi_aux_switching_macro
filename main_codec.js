@@ -10,6 +10,33 @@ reserved. Unless required by applicable law or agreed to separately in
 writing, software distributed under the License is distributed on an "AS
 IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express
 or implied.
+*
+* Repository: gve_devnet_webex_devices_executive_room_multi_aux_switching_macro
+* Macro file: main_codec
+* Version: 1.0.3
+* Released: June 14, 2023
+* Latest RoomOS version tested: 11.4
+*
+* Macro Author:      	Gerardo Chaves
+*                    	Technical Solutions Architect
+*                    	gchaves@cisco.com
+*                    	Cisco Systems
+*
+* Consulting Engineer: Robert(Bobby) McGonigle Jr
+*                    	 Technical Marketing Engineer
+*                    	 bomcgoni@cisco.com
+*                    	 Cisco Systems
+* 
+*    
+* 
+*    As a macro, the features and functions of this webex devices executive room voice activated 
+*    switching macro are not supported by Cisco TAC
+* 
+*    Hardware and Software support are provided by their respective manufacturers 
+*      and the service agreements they offer
+*    
+*    Should you need assistance with this macro, reach out to your Cisco sales representative
+*    so they can engage the GVE DevNet team. 
 */
 /////////////////////////////////////////////////////////////////////////////////////////
 // REQUIREMENTS
@@ -209,6 +236,9 @@ const MICROPHONEHIGH = 25;
 
 const minOS10Version = '10.17.1.0';
 const minOS11Version = '11.0.0.4';
+
+let presenterTrackConfigured = false;
+let presenterSuspendedAuto = false;
 
 /*
 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -449,7 +479,7 @@ async function validate_mappings() {
 var AUX_CODEC_STATUS = {}
 
 //Declare your object for GMM communication
-var auxCodec = {};
+var auxCodecs = {};
 
 let micArrays = {};
 for (var i in config.monitorMics) {
@@ -546,21 +576,26 @@ async function init() {
   // make sure Preset 30 exists, if not create it with just an overview shot of camera ID 1 which should be the QuadCam
   checkOverviewPreset();
 
+
+  // check for presenterTrack being configured
+  let enabledGet = await xapi.Config.Cameras.PresenterTrack.Enabled.get()
+  presenterTrackConfigured = (enabledGet == 'True') ? true : false;
+
+  let codecIPArray = [];
+
   config.compositions.forEach(compose => {
-    if (compose.codecIP != '' && compose.role == CODEC_AUX) {
+    if (compose.codecIP != '' && compose.source == CODEC_AUX) {
       console.log(`Setting up connection to aux codec with IP ${compose.codecIP}`);
-      auxCodec[compose.codecIP] = new GMM.Connect.IP(AUX_CODEC_USERNAME, AUX_CODEC_PASSWORD, compose.codecIP)
-      console.log(`Creating aux status object for this aux codec...`)
+      //auxCodec[compose.codecIP] = new GMM.Connect.IP(AUX_CODEC_USERNAME, AUX_CODEC_PASSWORD, compose.codecIP)
+      //console.log(`Creating aux status object for this aux codec...`)
+      console.log(`Adding IP address of aux codec to array to create connection object...`)
+      codecIPArray.push(compose.codecIP);
       AUX_CODEC_STATUS[compose.codecIP] = { enable: true, 'online': false };
     }
   })
-  /*
-    try {
-      auxCodec = new GMM.Connect.IP(AUX_CODEC_AUTH, '', AUX_CODEC_IP)
-    } catch (e) {
-      console.error(e)
-    }
-    */
+
+  // now creating one connection object that sends to multiple aux codecs
+  auxCodecs = new GMM.Connect.IP(AUX_CODEC_USERNAME, AUX_CODEC_PASSWORD, codecIPArray)
 
 
   // Stop any VuMeters that might have been left from a previous macro run with a different config.monitorMics constant
@@ -681,6 +716,11 @@ async function startAutomation() {
   manual_mode = false;
   allowCameraSwitching = true;
 
+  // presenterTrack cannot be on when we start automation
+  if (presenterTrackConfigured) {
+    xapi.Command.Cameras.PresenterTrack.Set({ Mode: 'Off' });
+  }
+
   if (isOSEleven) {
     try {
       xapi.Config.Cameras.SpeakerTrack.DefaultBehavior.set(ST_DEFAULT_BEHAVIOR);
@@ -724,7 +764,7 @@ async function startAutomation() {
   xapi.command('UserInterface Extensions Widget SetValue', { WidgetId: 'widget_override', Value: 'on' });
 }
 
-function stopAutomation() {
+function stopAutomation(reset_source = true) {
   //setting overall manual mode to true
   manual_mode = true;
   stopSideBySideTimer();
@@ -735,8 +775,10 @@ function stopAutomation() {
   console.log("Stopping all VuMeters...");
   xapi.Command.Audio.VuMeter.StopAll({});
   //TODO: check to see if when we stop automation we really want to switch to connectorID 1
-  console.log("Switching to MainVideoSource connectorID 1 ...");
-  xapi.Command.Video.Input.SetMainVideoSource({ SourceId: 1 });
+  if (reset_source) {
+    console.log("Switching to MainVideoSource connectorID 1 ...");
+    xapi.Command.Video.Input.SetMainVideoSource({ SourceId: 1 });
+  }
   // using proper way to de-register handlers
   micHandler();
   micHandler = () => void 0;
@@ -1189,19 +1231,10 @@ GMM.Event.Receiver.on(event => {
 // INTER-CODEC COMMUNICATION
 /////////////////////////////////////////////////////////////////////////////////////////
 
-/*
-async function sendIntercodecMessage(codec, message) {
-  if (codec.enable) {
-    console.log(`sendIntercodecMessage: codec = ${codec.url} | message = ${message}`);
-    if (auxCodec != '') auxCodec.status(message).queue().catch(e => {
-      console.log('Error sending message');
-      alertFailedIntercodecComm("Error connecting to codec for second camera, please contact the Administrator");
-    });
-  }
-}
-*/
+
 
 async function sendIntercodecMessage(message) {
+  /*
   for (const keyIP in auxCodec)
     if (auxCodec[keyIP] != '' && AUX_CODEC_STATUS[keyIP].enable) {
       console.log(`sendIntercodecMessage: codec = ${auxCodec[keyIP]} | message = ${message}`);
@@ -1209,6 +1242,11 @@ async function sendIntercodecMessage(message) {
         alertFailedIntercodecComm("Error connecting to codec for second camera, please contact the Administrator");
       });
     }
+    */
+  console.log(`sendIntercodecMessage to all aux codecs: message = ${message}`);
+  await auxCodecs.status(message).passIP().queue().catch(e => {
+    alertFailedIntercodecComm("Error connecting to codec for second camera, please contact the Administrator");
+  });
 }
 
 
@@ -1392,5 +1430,29 @@ xapi.Status.Cameras.SpeakerTrack.Availability
     }
   });
 
+// register to keep track of when PresenterTrack is active or not
+xapi.Status.Cameras.PresenterTrack.Status.on(async value => {
+  console.log('Received PT status as: ', value)
+  if (value === 'Follow' || value === 'Persistent') {
+    if (!manual_mode) {
+
+      await stopAutomation(false);
+      presenterSuspendedAuto = true;
+      if (allowSideBySide) {
+        allowSideBySide = false;
+        let presenterSource = await xapi.Config.Cameras.PresenterTrack.Connector.get();
+        let connectorDict = { ConnectorId: presenterSource };
+        await xapi.Command.Video.Input.SetMainVideoSource(connectorDict);
+        await xapi.Command.Cameras.PresenterTrack.Set({ Mode: value });
+      }
+    }
+  }
+  else {
+    if (presenterSuspendedAuto) {
+      startAutomation();
+      presenterSuspendedAuto = false;
+    }
+  }
+});
 
 init();
