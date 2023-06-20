@@ -14,8 +14,8 @@ or implied.
 * Repository: gve_devnet_webex_devices_executive_room_multi_aux_switching_macro
 * Macro file: main_codec
 * Version: 1.0.3
-* Released: June 14, 2023
-* Latest RoomOS version tested: 11.4
+* Released: June 20, 2023
+* Latest RoomOS version tested: 11.5.1.9
 *
 * Macro Author:      	Gerardo Chaves
 *                    	Technical Solutions Architect
@@ -128,7 +128,7 @@ const config = {
       presetZone: Z0 // use a camera preset zone (Z1, Z2, Z3, etc..) instead of a layout with specific connectors.
     },
     {
-      name: 'Overview',          // IMPORTANT: There needs to be an overview compositino with mics: [0]
+      name: 'Overview',          // IMPORTANT: There needs to be an overview composition with mics: [0]
       codecIP: '',
       mics: [0],
       connectors: [3, 1, 2], // Specify here the video inputs and order to use to compose the "side by side" view
@@ -137,6 +137,15 @@ const config = {
       presetZone: Z0 // use a camera preset zone (Z1, Z2, Z3, etc..) instead of a layout with specific connectors.
     }
   ]
+}
+
+// The auto_top_speakers object below controls if the macro should show the top N speakers in a composition
+// when multiple people are speaking at the same time. Set the enabled property to true to enable it. 
+const auto_top_speakers = {
+  enabled: false, // if set to true, the macro will dynamically create composition of top speaker segments
+  max_speakers: 2, // specify maximum number of top speaker segments to compose
+  default_connectors: [1, 2, 3, 4], // specify connectos to use for top speakers composition in order
+  layout: 'Equal'
 }
 
 
@@ -200,6 +209,14 @@ const MAP_PTZ_CAMERA_VIDEO_SOURCE_ID = { '2': 6, '3': 2, '4': 4 };
 // Frames: The default framing mode is Frames.
 const ST_DEFAULT_BEHAVIOR = 'Closeup'
 
+// If you wish to remove a video input from the overview shot if the Aux codec that 
+// sends it is not reporting anyone in front of the camera, set REMOVE_EMPTY_SEGMENTS to false
+// this will also apply for the QuadCam in the main codec, but if the logic ends up removing all segments
+// it will actually show them all so the other side sees that there is simply nobobody in the room. 
+// If an Aux codec does not have a camera capable of doing PeopleCount or it is disaled, that codec will always
+// report that there are people in the shot. 
+const REMOVE_EMPTY_SEGMENTS = false
+
 // This next line hides the mid-call controls “Lock meeting” and “Record”.  The reason for this is so that the
 // “Camera Control” button can be seen.  If you prefer to have the mid-call controls showing, change the value of this from “Hidden” to “Auto”
 xapi.Config.UserInterface.Features.Call.MidCallControls.set("Hidden");
@@ -228,8 +245,6 @@ const VIDEO_SOURCE_SWITCH_WAIT_TIME = 500; // 500 ms
 /////////////////////////////////////////////////////////////////////////////////////////
 
 
-//const AUX_CODEC_AUTH = encode(AUX_CODEC_USERNAME + ':' + AUX_CODEC_PASSWORD); // DO NOT EDIT
-
 // Microphone High/Low Thresholds
 const MICROPHONELOW = 6;
 const MICROPHONEHIGH = 25;
@@ -246,6 +261,23 @@ let presenterSuspendedAuto = false;
 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 */
 
+var top_speakers_connectors = [];
+var mic_connectors_map = {}
+
+// create a map of microphones to corresponding main video connector
+config.compositions.forEach(compose => {
+  compose.mics.forEach(mic => {
+    mic_connectors_map[mic] = compose.connectors[0];
+  })
+});
+var comp_sets_array = [] // array of top speaker compositions to keep track of for last speaker value
+
+var aux_connectors_map = {}
+
+// create a map of microphones to corresponding main video connector
+config.compositions.forEach(compose => {
+  aux_connectors_map[compose.codecIP] = compose.connectors
+});
 
 // Validate config settings
 async function validate_config() {
@@ -434,47 +466,10 @@ const sleep = (timeout) => new Promise((resolve) => {
   setTimeout(resolve, timeout);
 });
 
-/*
-async function validate_mappings() {
-    const timeout = 2000; // Milliseconds, equals 2 seconds
-
-    if (MICROPHONE_CONNECTORS.length != MAP_CAMERA_SOURCES.length) {
-        console.log('ERROR: There is a mismatch between the number of microphones defined and the number of camera sources mapped:');
-        console.log('Microphone connectors defined: ', MICROPHONE_CONNECTORS);
-        console.log('Map of camera sources: ', MAP_CAMERA_SOURCES);
-        while (true) {
-                console.log('Please stop this Camera Switcher Macro, correct the microphones/camera sources mismatch and re-start...');
-                await sleep(timeout);
-        }
-
-    }
-
-    if (MAP_CAMERA_SOURCES.indexOf(SP)!=-1) {
-        if  (MAP_CAMERA_SOURCES.indexOf(SP) != MAP_CAMERA_SOURCES.lastIndexOf(SP))
-        {
-            console.log('ERROR: There can only be one or zero SpeakerTrack (value 0) cameras sources defined in the map:');
-            console.log('Map of camera sources: ', MAP_CAMERA_SOURCES);
-            while (true) {
-                    console.log('Please stop this Camera Switcher Macro, make sure there is only 1 or 0 SpeakerTrack cameras configured and re-start...');
-                    await sleep(timeout);
-            }
-        }
-    }
-}
-*/
-
-//validate_mappings();
-
-// below we check for the existence of a SpeakerTrack camera configured for the codec
-// so we can safely issue SpeakerTrack related commands
-//let has_SpeakerTrack = MAP_CAMERA_SOURCES.indexOf(SP) != -1 ||
-//  MAP_CAMERA_SOURCES.indexOf(V1) != -1;
-
 
 /////////////////////////////////////////////////////////////////////////////////////////
 // VARIABLES
 /////////////////////////////////////////////////////////////////////////////////////////
-//let AUX_CODEC = { enable: (AUX_CODEC_IP != ''), online: false, url: AUX_CODEC_IP, auth: AUX_CODEC_AUTH };
 
 var AUX_CODEC_STATUS = {}
 
@@ -496,6 +491,7 @@ let newSpeakerTimer = null;
 let manual_mode = true;
 let lastActivePTZCameraZoneObj = Z0;
 let lastActivePTZCameraZoneCamera = '0';
+
 
 let perma_sbs = false; // set to true if you want to start with side by side view always
 
@@ -590,7 +586,7 @@ async function init() {
       //console.log(`Creating aux status object for this aux codec...`)
       console.log(`Adding IP address of aux codec to array to create connection object...`)
       codecIPArray.push(compose.codecIP);
-      AUX_CODEC_STATUS[compose.codecIP] = { enable: true, 'online': false };
+      AUX_CODEC_STATUS[compose.codecIP] = { enable: true, 'online': false, 'haspeople': true };
     }
   })
 
@@ -795,6 +791,7 @@ function stopAutomation(reset_source = true) {
 function checkMicLevelsToSwitchCamera() {
   // make sure we've gotten enough samples from each mic in order to do averages
   if (allowCameraSwitching) {
+    /*
     // figure out which of the inputs has the highest average level then perform logic for that input *ONLY* if allowCameraSwitching is true
     let array_key = largestMicValue();
     let array = [];
@@ -803,11 +800,19 @@ function checkMicLevelsToSwitchCamera() {
     let average = averageArray(array);
     //get the input number as an int since it is passed as a string (since it is a key to a dict)
     let input = parseInt(array_key);
+*/
+    // first let's check for top N mics with topNMicValue() which will also fill out needed
+    // composition to use to set main video source 
+    let topMics = topNMicValue();
+    let input = topMics[0];
+    let average = topMics[1]
+
+
     // someone is speaking
     if (average > MICROPHONEHIGH) {
       // start timer to prevent Side-by-Side mode too quickly
       restartSideBySideTimer();
-      if (input > 0) {
+      if (input != 0) {
         lowWasRecalled = false;
         // no one was talking before
         if (lastActiveHighInput === 0) {
@@ -832,10 +837,13 @@ function checkMicLevelsToSwitchCamera() {
         if (input > 0 && !lowWasRecalled) {
           lastActiveHighInput = 0;
           lowWasRecalled = true;
+          /*
           console.log("-------------------------------------------------");
           console.log("Low Triggered");
           console.log("-------------------------------------------------");
           recallSideBySideMode();
+          */
+          makeCameraSwitch(0, average);
         }
       }
     }
@@ -845,64 +853,88 @@ function checkMicLevelsToSwitchCamera() {
 
 // function to actually switch the camera input
 async function makeCameraSwitch(input, average) {
-  console.log("-------------------------------------------------");
-  console.log("High Triggered: ");
-  console.log(`Input = ${input} | Average = ${average}`);
-  console.log("-------------------------------------------------");
-
+  if (input > 0) {
+    console.log("-------------------------------------------------");
+    console.log("High Triggered: ");
+    console.log(`Input = ${input} | Average = ${average}`);
+    console.log("-------------------------------------------------");
+  }
+  else if (input == 0) {
+    console.log("-------------------------------------------------");
+    console.log("Low Triggered");
+    console.log(`Average = ${average}`);
+    console.log("-------------------------------------------------");
+  }
+  else {
+    console.log("-------------------------------------------------");
+    console.log("Multi-High Triggered");
+    console.log(`Input = ${input} | Average = ${average}`);
+    console.log("-------------------------------------------------");
+  }
 
   // map the loudest mic to the corresponding composition which could be local or from an 
   // aux codec.
 
-  if (perma_sbs) input = 0; // TODO: figure out if there is any need to do anything special for perma_sbs other than 
-  // setting the composition to the overview one. If not, then remove     permaSideBySideMode(selectedSource);
+  if (perma_sbs) input = 0; // if permanent side by side is selected in the custom panel, just always show the overview
 
-
-  let sourceDict = { SourceID: '0' } // Just initialize
-  config.compositions.forEach(compose => {
-    if (compose.mics.includes(input)) {
-      console.log(`Setting to composition = ${compose.name}`);
-      if (('presetZone' in compose) && (compose.presetZone != Z0)) {
-        console.log(`Setting Video Input to preset [${compose.presetZone}] `);
-        sourceDict = { PresetZone: compose.presetZone };
+  if (input >= 0) {
+    let sourceDict = { SourceID: '0' } // Just initialize
+    config.compositions.forEach(compose => {
+      if (compose.mics.includes(input)) {
+        console.log(`Setting to composition = ${compose.name}`);
+        if (('presetZone' in compose) && (compose.presetZone != Z0)) {
+          console.log(`Setting Video Input to preset [${compose.presetZone}] `);
+          sourceDict = { PresetZone: compose.presetZone };
+        }
+        else {
+          console.log(`Setting Video Input to connectors [${compose.connectors}] and Layout: ${compose.layout}`);
+          sourceDict = { ConnectorId: compose.connectors, Layout: compose.layout }
+        }
       }
-      else {
-        console.log(`Setting Video Input to connectors [${compose.connectors}] and Layout: ${compose.layout}`);
-        sourceDict = { ConnectorId: compose.connectors, Layout: compose.layout }
+    })
+
+    if (!('PresetZone' in sourceDict)) {
+
+      // the Video Input SetMainVideoSource does not work while Speakertrack is active
+      // so we need to turn it off in case the previous video input was from a source where
+      // SpeakerTrack is used.
+      //xapi.command('Cameras SpeakerTrack Deactivate').catch(handleError);
+      pauseSpeakerTrack();
+      // Switch to the source that is speficied in the same index position in MAP_CAMERA_SOURCE_IDS
+      //sourceDict["SourceID"] = selectedSource.toString();
+      console.log("Switching to input with SetMainVideoSource with dict: ", sourceDict)
+      xapi.Command.Video.Input.SetMainVideoSource(sourceDict).catch(handleError);
+      if (sourceDict.ConnectorId.includes(MAIN_CODEC_QUADCAM_SOURCE_ID)) {
+        // if the codec is using a QuadCam (no SpeakerTrack camera allowed) then
+        // turn back on SpeakerTrack function on the codec in case it was turned off in side by side mode.
+        resumeSpeakerTrack();
       }
+
+      // if we are not switching to a camera zone with PTZ cameras, we need to re-set the
+      // lastActivePTZCameraZone Object to the "non-camera" value of Z0 as when we started the macro
+      // because the decision tree on switching or not from a camera that was already pointed at someone
+      // relies on the last video input source having been a PTZ camera video zone
+      lastActivePTZCameraZoneObj = Z0;
+      lastActivePTZCameraZoneCamera = '0';
     }
-  })
-
-
-
-
-  if (!('PresetZone' in sourceDict)) {
-
-    // the Video Input SetMainVideoSource does not work while Speakertrack is active
-    // so we need to turn it off in case the previous video input was from a source where
-    // SpeakerTrack is used.
-    //xapi.command('Cameras SpeakerTrack Deactivate').catch(handleError);
-    pauseSpeakerTrack();
-    // Switch to the source that is speficied in the same index position in MAP_CAMERA_SOURCE_IDS
-    //sourceDict["SourceID"] = selectedSource.toString();
-    console.log("Switching to input with SetMainVideoSource with dict: ", sourceDict)
-    xapi.Command.Video.Input.SetMainVideoSource(sourceDict).catch(handleError);
-    if (sourceDict.ConnectorId.includes(MAIN_CODEC_QUADCAM_SOURCE_ID)) {
-      // if the codec is using a QuadCam (no SpeakerTrack camera allowed) then
-      // turn back on SpeakerTrack function on the codec in case it was turned off in side by side mode.
-      resumeSpeakerTrack();
+    else {
+      switchToVideoZone(sourceDict.PresetZone);
     }
 
-    // if we are not switching to a camera zone with PTZ cameras, we need to re-set the
-    // lastActivePTZCameraZone Object to the "non-camera" value of Z0 as when we started the macro
-    // because the decision tree on switching or not from a camera that was already pointed at someone
-    // relies on the last video input source having been a PTZ camera video zone
-    lastActivePTZCameraZoneObj = Z0;
-    lastActivePTZCameraZoneCamera = '0';
+  } else {
+    // Here we switch to the previously prepared composition that corresponds to 
+    // the top N active speakers. 
+    // TODO: See how this would work with preset zones... might need to modify to call switchToVideoZone() for each zone involved
+    // in the resulting top N composition making sure it does not mess up anything else... then call SetMainVideoSource!
+    console.log(`Switching to auto-generated top N speakers composition.`);
+    console.log(`Setting Video Input to connectors [${top_speakers_connectors}]  and Layout: ${auto_top_speakers.layout}`)
+    xapi.Command.Video.Input.SetMainVideoSource(
+      {
+        ConnectorId: top_speakers_connectors,
+        Layout: auto_top_speakers.layout
+      });
   }
-  else {
-    switchToVideoZone(sourceDict.PresetZone);
-  }
+
   // send required messages to auxiliary codec that also turns on speakertrack over there
   await sendIntercodecMessage('automatic_mode');
 
@@ -979,6 +1011,83 @@ function largestMicValue() {
   return currentMaxKey;
 }
 
+function topNMicValue() {
+  let theAverage = 0;
+  let averagesMap = {}
+  let input = 0;
+  let average = 0;
+
+  //NOTE: micArrays is indexed with string representations of integers that are the mic connector ID
+  config.monitorMics.forEach(mic => {
+    theAverage = averageArray(micArrays[mic.toString()]);
+    averagesMap[mic] = theAverage;
+  })
+
+  let entries = Object.entries(averagesMap)
+  let sorted = entries.sort((a, b) => a[1] - b[1]);
+
+  //capture top mic and average in case we need to return just that below
+  input = parseInt(sorted[sorted.length - 1][0])
+  average = parseInt(sorted[sorted.length - 1][1])
+
+  // check for auto_top_speakers disabled or less than 2 max_speakers to just return top mic and value
+  if (sorted.length > 0) {
+    if (!auto_top_speakers.enabled || auto_top_speakers.max_speakers < 2) return [input, average]
+  } else { return [0, 0]; }
+
+  // now that we know that auto_top_speakers is enabled and looking for 2 or more top speaker segments,
+  // we iterate through averages focusing only on those above MICROPHONEHIGH
+  // and map those to the corresponding connector and remove duplciates
+  // then check to see if more than one top speakers are active to calculate the new layout
+  let sorted_high_connectors = []
+  let theSet = new Set()
+  for (let i = sorted.length - 1; i >= 0; i--) {
+    let mic_id = sorted[i][0]
+    let mic_avg = sorted[i][1]
+    let connector = mic_connectors_map[mic_id]
+    if (mic_avg > MICROPHONEHIGH) {
+      // push connector only if not already there
+      if (!sorted_high_connectors.includes(connector)) {
+        sorted_high_connectors.push(connector)
+        theSet.add(connector)
+      };
+    }
+  }
+
+  // if after removing duplicates we have less than 2 entries, just return the originally expected values
+  // of highest input and it's average
+  if (sorted_high_connectors.length < 2) return [input, average]
+
+  // now set the top_speakers_connectors gobal variable as a filtered version of auto_top_speakers.default_connectors
+  top_speakers_connectors = []
+  auto_top_speakers.default_connectors.forEach(connector => {
+    if (sorted_high_connectors.includes(connector)) top_speakers_connectors.push(connector)
+  })
+
+  // now calculate and return a negative value
+  // that corresponds with the unique unordered set of connectors that are being used
+  let comp_index = 0
+
+  for (let i = 0; i < comp_sets_array.length; i++) {
+    if (difference(comp_sets_array[i], theSet).size == 0) { comp_index = -(i + 1); break; }
+  }
+  if (comp_index == 0) {
+    comp_sets_array.push(theSet)
+    comp_index = -(comp_sets_array.length);
+  }
+  input = comp_index
+
+  return [input, average]
+}
+
+function difference(setA, setB) {
+  const _difference = new Set(setA);
+  for (const elem of setB) {
+    _difference.delete(elem);
+  }
+  return _difference;
+}
+
 function averageArray(arrayIn) {
   let sum = 0;
   for (var i = 0; i < arrayIn.length; i++) {
@@ -1002,7 +1111,7 @@ async function recallSideBySideMode() {
     //if (has_SpeakerTrack) xapi.command('Cameras SpeakerTrack Deactivate').catch(handleError);
     if (MAIN_CODEC_QUADCAM_SOURCE_ID > 0) pauseSpeakerTrack();
 
-    config.compositions.forEach(compose => {
+    config.compositions.forEach(async compose => {
       if (compose.mics.includes(0)) {
         console.log(`SideBySide setting to composition = ${compose.name}`);
         if (('presetZone' in compose) && (compose.presetZone != Z0)) {
@@ -1011,12 +1120,35 @@ async function recallSideBySideMode() {
           switchToVideoZone(compose.presetZone);
         }
         else {
-          console.log(`Setting Video Input to connectors [${compose.connectors}] and Layout: ${compose.layout}`);
-          let sourceDict = { ConnectorId: compose.connectors, Layout: compose.layout }
+          let the_connectors = [...compose.connectors];
+          if (REMOVE_EMPTY_SEGMENTS)
+            Object.entries(AUX_CODEC_STATUS).forEach(([key, val]) => {
+              console.log(`Evaluating segment for ip ${key} with val = ${val}`)
+              if (!val.haspeople) {
+                // remove corresponding connectors if nobody in segement!
+                console.log(`Trying to remove segment for ip ${key}`)
+                aux_connectors_map[key].forEach(connectorID => {
+                  the_connectors.splice(the_connectors.indexOf(connectorID), 1)
+                })
+              }
+            })
+
+          // check to see if the quadcam on the main codec sees people
+          if (MAIN_CODEC_QUADCAM_SOURCE_ID != 0) {
+            let the_count = await xapi.Status.RoomAnalytics.PeopleCount.Current.get();
+            if (the_count == 0) the_connectors.splice(the_connectors.indexOf(MAIN_CODEC_QUADCAM_SOURCE_ID), 1)
+          }
+
+          // do not allow the removal of all segments. If none have people, just show all meant for the 
+          // overview
+          if (the_connectors.length == 0) the_connectors = [...compose.connectors]
+
+          console.log(`Setting Video Input to connectors [${the_connectors}] and Layout: ${compose.layout}`);
+          let sourceDict = { ConnectorId: the_connectors, Layout: compose.layout }
           xapi.Command.Video.Input.SetMainVideoSource(sourceDict);
           xapi.command('Camera Preset Activate', { PresetId: 30 }).catch(handleError);
 
-          const payload = { EditMatrixOutput: { sources: connectorDict["ConnectorId"] } };
+          const payload = { EditMatrixOutput: { sources: sourceDict["ConnectorId"] } };
           setTimeout(function () {
             //Let USB Macro know we are composing
             localCallout.command(payload).post()
@@ -1053,43 +1185,6 @@ async function recallSideBySideMode() {
   lastActiveHighInput = 0;
   lowWasRecalled = true;
 }
-
-/*
-async function permaSideBySideMode(selectedSource) {
-
-  if (overviewShowDouble && !webrtc_mode) { //WebRTC mode does not support composing yet even in RoomOS11
-    let connectorDict = { ConnectorId: [0, 0] };
-    connectorDict["ConnectorId"] = OVERVIEW_DOUBLE_SOURCE_IDS;
-    console.log("Trying to use this for connector dict in permaSideBySideMode(): ", connectorDict)
-    xapi.command('Video Input SetMainVideoSource', connectorDict).catch(handleError);
-
-    if (MAIN_CODEC_QUADCAM_SOURCE_ID == selectedSource) {
-      await sendIntercodecMessage('side_by_side');
-      //if (has_SpeakerTrack) xapi.command('Cameras SpeakerTrack Activate').catch(handleError);
-      resumeSpeakerTrack();
-
-    } else {
-      await sendIntercodecMessage('automatic_mode');
-      //if (has_SpeakerTrack) xapi.command('Cameras SpeakerTrack Deactivate').catch(handleError);
-      if (MAIN_CODEC_QUADCAM_SOURCE_ID > 0) pauseSpeakerTrack();
-      xapi.command('Camera Preset Activate', { PresetId: 30 }).catch(handleError);
-    }
-
-    const payload = { EditMatrixOutput: { sources: connectorDict["ConnectorId"] } };
-
-    setTimeout(function () {
-      //Let USB Macro know we are composing
-      localCallout.command(payload).post()
-    }, 250) //250ms delay to allow the main source to resolve first
-  }
-  else {
-    console.log('Cannot set permanent side by side mode without overviewShowDouble set to true or in WebRTC mode... ');
-    perma_sbs = false;
-    xapi.command('UserInterface Extensions Widget SetValue', { WidgetId: 'widget_sbs_control', Value: (perma_sbs) ? 'on' : 'off' });
-  }
-
-}
-*/
 
 /////////////////////////////////////////////////////////////////////////////////////////
 // TOUCH 10 UI FUNCTION HANDLERS
@@ -1217,7 +1312,12 @@ GMM.Event.Receiver.on(event => {
       switch (event.Value) {
         case "VTC-1_OK":
           handleCodecOnline(event.Source?.IPv4);
-          //handleCodecOnline(AUX_CODEC);
+          break;
+        case "aux_has_people":
+          handleCodecPeopleReport(event.Source?.IPv4, true)
+          break;
+        case "aux_no_people":
+          handleCodecPeopleReport(event.Source?.IPv4, false)
           break;
         default:
           break;
@@ -1234,15 +1334,6 @@ GMM.Event.Receiver.on(event => {
 
 
 async function sendIntercodecMessage(message) {
-  /*
-  for (const keyIP in auxCodec)
-    if (auxCodec[keyIP] != '' && AUX_CODEC_STATUS[keyIP].enable) {
-      console.log(`sendIntercodecMessage: codec = ${auxCodec[keyIP]} | message = ${message}`);
-      auxCodec[keyIP].status(message).passIP().queue().catch(e => {
-        alertFailedIntercodecComm("Error connecting to codec for second camera, please contact the Administrator");
-      });
-    }
-    */
   console.log(`sendIntercodecMessage to all aux codecs: message = ${message}`);
   await auxCodecs.status(message).passIP().queue().catch(e => {
     alertFailedIntercodecComm("Error connecting to codec for second camera, please contact the Administrator");
@@ -1306,6 +1397,13 @@ function handleCodecOnline(codecIP) {
   if (AUX_CODEC_STATUS[codecIP].enable) {
     console.log(`handleCodecOnline: codec = ${codecIP}`);
     AUX_CODEC_STATUS[codecIP].online = true;
+  }
+}
+
+function handleCodecPeopleReport(codecIP, seespeople) {
+  if (AUX_CODEC_STATUS[codecIP].enable) {
+    console.log(`handleCodecPeopleReport: codec = ${codecIP} seespeople= ${seespeople}`);
+    AUX_CODEC_STATUS[codecIP].haspeople = seespeople
   }
 }
 

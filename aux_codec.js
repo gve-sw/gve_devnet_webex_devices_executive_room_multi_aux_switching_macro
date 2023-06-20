@@ -14,8 +14,8 @@ or implied.
 * Repository: gve_devnet_webex_devices_executive_room_multi_aux_switching_macro
 * Macro file: aux_codec
 * Version: 1.0.3
-* Released: May 1, 2023
-* Latest RoomOS version tested: 11.4
+* Released: June 20, 2023
+* Latest RoomOS version tested: 11.5.1.9
 *
 * Macro Author:      	Gerardo Chaves
 *                    	Technical Solutions Architect
@@ -41,6 +41,7 @@ or implied.
 
 import xapi from 'xapi';
 import { GMM } from './GMM_Lib'
+
 
 /////////////////////////////////////////////////////////////////////////////////////////
 // INSTALLER SETTINGS
@@ -120,6 +121,15 @@ async function checkOverviewPreset() {
   }
 }
 
+async function getPeopleCount() {
+  const value = await xapi.Status.RoomAnalytics.PeopleCount.Current.get()
+  if (value == 0)
+    await sendIntercodecMessage("aux_no_people")
+  else
+    await sendIntercodecMessage("aux_has_people") // if value is -1 then the feature is not available due to codec or camera capability, in this case always show the segment
+}
+
+
 // ---------------------- INITIALIZATION
 
 function init() {
@@ -134,6 +144,9 @@ function init() {
 
   // register callback for processing messages from main codec
   xapi.Command.Cameras.SpeakerTrack.Activate();
+
+  getPeopleCount();
+  setInterval(getPeopleCount, 60000)
 }
 // ---------------------- ERROR HANDLING
 
@@ -202,11 +215,13 @@ async function handleMacroStatus() {
 
 function handleWakeUp() {
   console.log('handleWakeUp');
-
   // send required commands to this codec
   xapi.command('Standby Deactivate').catch(handleError);
   xapi.Command.Cameras.SpeakerTrack.Activate();
-
+  setTimeout(function () {
+    xapi.command('Video Selfview Set', { Mode: 'On', FullScreenMode: 'On', OnMonitorRole: 'First' })
+      .catch((error) => { console.error(error); });
+  }, 2000);
 }
 
 function handleShutDown() {
@@ -243,6 +258,7 @@ function pauseSpeakerTrack() {
   if (USE_ST_BG_MODE) xapi.Command.Cameras.SpeakerTrack.BackgroundMode.Activate().catch(handleError);
   else xapi.Command.Cameras.SpeakerTrack.Deactivate().catch(handleError);
 }
+
 
 xapi.Status.Cameras.SpeakerTrack.Availability
   .on((value) => {
