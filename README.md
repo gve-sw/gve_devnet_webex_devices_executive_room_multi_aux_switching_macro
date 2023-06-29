@@ -10,6 +10,13 @@ Webex Room Device macro to switch input source to camera pointed in the directio
 - Added ability to show composition of top N speakers based on audio activity
 - Added the ability to remove segments in the overview shot coming from Aux codecs that do not report any participants sitting in front of the camera
 
+6/29/23 Updates:
+
+- Fixed setting of missing preset 30 so it works with cameras other than QuadCam
+- Fixed topN speakers because it was not using the max_speakers attribute to limit how many to compose
+- Added code to just warn when the wrong IP address for an Aux is configured and messages are received
+- Added correct handling for 'Frames' when specified in the the ST_DEFAULT_BEHAVIOR constant.
+
 ## Contacts
 
 - Gerardo Chaves (gchaves@cisco.com)
@@ -53,6 +60,9 @@ Notice that for the dual codec scenario, the camera input 2 on the Primary (Main
 Output 1 on the Auxiliary codec since we are just using that codec to pass along the video from the QuadCam.
 Also notice that all microphones are connected to the Primary (Main) Codec since the macro running
 there is the one making all of the decisions on which camara to activate depending on audio activity.
+Only analog microphones connected to input connectors 1-8 are supported.
+
+WARNING: Make sure the Main an Auxiliary codecs are NOT in the same Workspace in Control Hub. If they are, the Auxiliary codecs will try to join the same call as the Main codec and that will interfere with the overall functionality of this macro.
 
 After the codecs, cameras and microphones are correctly connected do the following:
 

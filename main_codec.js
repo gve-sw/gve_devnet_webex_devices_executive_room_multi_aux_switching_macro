@@ -13,8 +13,8 @@ or implied.
 *
 * Repository: gve_devnet_webex_devices_executive_room_multi_aux_switching_macro
 * Macro file: main_codec
-* Version: 1.0.3
-* Released: June 20, 2023
+* Version: 1.0.4
+* Released: June 29, 2023
 * Latest RoomOS version tested: 11.5.1.9
 *
 * Macro Author:      	Gerardo Chaves
@@ -434,7 +434,7 @@ async function disableMacro(reason = 'N/A') {
 
 
 async function checkOverviewPreset() {
-  console.log('Checking for existence of preset 30')
+  console.log('Checking for existence of preset 30 for Camera 1')
   let pre_list = await xapi.Command.Camera.Preset.List(
     { CameraId: 1 })
   let pre_exists = false;
@@ -445,11 +445,15 @@ async function checkOverviewPreset() {
   }
   if (!pre_exists) {
     console.log('Preset 30 does not exist, need to create it....')
-    await xapi.Command.Camera.PositionReset({ CameraId: 1 });
-    await delay(1000);
-    await xapi.Command.Camera.Preset.Store(
-      { CameraId: 1, Name: "Overview", PresetId: 30 });
-    console.log('Preset 30 created')
+    if (MAIN_CODEC_QUADCAM_SOURCE_ID != 0) {
+      await xapi.Command.Camera.PositionSet({ CameraId: MAIN_CODEC_QUADCAM_SOURCE_ID, Zoom: 12000 })
+      await delay(1000);
+      await xapi.Command.Camera.Preset.Store(
+        { CameraId: 1, Name: "Overview", PresetId: 30 });
+      console.log('Preset 30 created')
+    } else {
+      console.warn(`WARNING: Camera Preset 30 does not exist and there is not QuadCam defined, just must manually create preset 30 as per instructions.`)
+    }
   }
 }
 
@@ -568,6 +572,9 @@ function evalSelfView(value) {
 
 async function init() {
   console.log('init');
+  await xapi.Config.RoomAnalytics.PeoplePresenceDetector.set('On');
+  await xapi.Config.RoomAnalytics.PeopleCountOutOfCall.set('On');
+
   if (!await validate_config()) disableMacro("invalid config")
   // make sure Preset 30 exists, if not create it with just an overview shot of camera ID 1 which should be the QuadCam
   checkOverviewPreset();
@@ -720,6 +727,8 @@ async function startAutomation() {
   if (isOSEleven) {
     try {
       xapi.Config.Cameras.SpeakerTrack.DefaultBehavior.set(ST_DEFAULT_BEHAVIOR);
+      if (ST_DEFAULT_BEHAVIOR == 'Frames') xapi.Command.Cameras.SpeakerTrack.Frames.Activate();
+      else xapi.Command.Cameras.SpeakerTrack.Frames.Deactivate();
       const webViewType = await xapi.Status.UserInterface.WebView.Type.get()
       if (webViewType == 'WebRTCMeeting') webrtc_mode = true;
     } catch (e) {
@@ -1058,8 +1067,12 @@ function topNMicValue() {
   // of highest input and it's average
   if (sorted_high_connectors.length < 2) return [input, average]
 
+  if (sorted_high_connectors.length > auto_top_speakers.max_speakers)
+    sorted_high_connectors = sorted_high_connectors.slice(0, auto_top_speakers.max_speakers)
+
   // now set the top_speakers_connectors gobal variable as a filtered version of auto_top_speakers.default_connectors
   top_speakers_connectors = []
+  let i = 0
   auto_top_speakers.default_connectors.forEach(connector => {
     if (sorted_high_connectors.includes(connector)) top_speakers_connectors.push(connector)
   })
@@ -1394,16 +1407,25 @@ async function handleMacroStatus() {
 }
 
 function handleCodecOnline(codecIP) {
-  if (AUX_CODEC_STATUS[codecIP].enable) {
-    console.log(`handleCodecOnline: codec = ${codecIP}`);
-    AUX_CODEC_STATUS[codecIP].online = true;
+  if (codecIP in AUX_CODEC_STATUS) {
+    if (AUX_CODEC_STATUS[codecIP].enable) {
+      console.log(`handleCodecOnline: codec = ${codecIP}`);
+      AUX_CODEC_STATUS[codecIP].online = true;
+    }
+  }
+  else {
+    console.warn(`No codec with IP ${codecIP} configured when receiving online report.`)
   }
 }
 
 function handleCodecPeopleReport(codecIP, seespeople) {
-  if (AUX_CODEC_STATUS[codecIP].enable) {
-    console.log(`handleCodecPeopleReport: codec = ${codecIP} seespeople= ${seespeople}`);
-    AUX_CODEC_STATUS[codecIP].haspeople = seespeople
+  if (codecIP in AUX_CODEC_STATUS) {
+    if (AUX_CODEC_STATUS[codecIP].enable) {
+      console.log(`handleCodecPeopleReport: codec = ${codecIP} seespeople= ${seespeople}`);
+      AUX_CODEC_STATUS[codecIP].haspeople = seespeople
+    }
+  } else {
+    console.warn(`No codec with IP ${codecIP} configured when receiving people report.`)
   }
 }
 
