@@ -17,6 +17,10 @@ Webex Room Device macro to switch input source to camera pointed in the directio
 - Added code to just warn when the wrong IP address for an Aux is configured and messages are received
 - Added correct handling for 'Frames' when specified in the the ST_DEFAULT_BEHAVIOR constant.
 
+7/10/23 Updates: (version 1.0.5)
+
+- Added ability to force frames onto primary and all aux codecs mid-call using custom "Camera Control" custom panel with a new "Force Frames" toggle switch.
+
 ## Contacts
 
 - Gerardo Chaves (gchaves@cisco.com)
@@ -104,6 +108,8 @@ That should bring up the following Panel where you can select the behavior desir
 ![IMAGES/CameraControlPanel.jpg](IMAGES/CameraControlPanel.jpg)
 
 If you have correctly configured an "overview" composition, you can control when that view is shown from the custom camera control panel by toggling the "Side by side" switch between Overview (when there is no voice activity detected in the room or the microphones are muted) and "Always". If set to "Always", a side by side composition will be send to the far end that includes the camera associated to the microphones that are detecting audio activity with SpeakerTrack turned and a the other camera will be showing the overview camera preset.
+
+You can use the "Force Frames" toggle switch to temporarily set the main codec and all Aux codecs to 'Frames' instead of the other variants of SpeakerTrack. When you turn off the toggle, it will go back to whatever you configured in the macro using the ST_DEFAULT_BEHAVIOR constant.
 
 The following actions with turn off the automatic behaviour for you in addition to manually turning it off:
 

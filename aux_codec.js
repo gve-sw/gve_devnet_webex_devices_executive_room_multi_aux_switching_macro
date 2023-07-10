@@ -13,9 +13,9 @@ or implied.
 *
 * Repository: gve_devnet_webex_devices_executive_room_multi_aux_switching_macro
 * Macro file: aux_codec
-* Version: 1.0.4
-* Released: June 29, 2023
-* Latest RoomOS version tested: 11.5.1.9
+* Version: 1.0.5
+* Released: July 10, 2023
+* Latest RoomOS version tested: 11.6.1.5
 *
 * Macro Author:      	Gerardo Chaves
 *                    	Technical Solutions Architect
@@ -105,6 +105,7 @@ xapi.command('Video Selfview Set', { Mode: 'On', FullScreenMode: 'On', OnMonitor
 // VARIABLES
 /////////////////////////////////////////////////////////////////////////////////////////
 
+let forceFramesOn = false;
 
 //Declare your object for GMM communication
 var mainCodec;
@@ -193,6 +194,12 @@ GMM.Event.Receiver.on(event => {
       case 'automatic_mode':
         handleAutomaticMode();
         break;
+      case 'force_frames_on':
+        handleFramesOn();
+        break;
+      case 'force_frames_off':
+        handleFramesOff();
+        break;
       default:
         break;
     }
@@ -263,13 +270,25 @@ function handleAutomaticMode() {
 
 
   xapi.Config.Cameras.SpeakerTrack.DefaultBehavior.set(ST_DEFAULT_BEHAVIOR);
-  if (ST_DEFAULT_BEHAVIOR == 'Frames') xapi.Command.Cameras.SpeakerTrack.Frames.Activate();
+  if (ST_DEFAULT_BEHAVIOR == 'Frames' || forceFramesOn) xapi.Command.Cameras.SpeakerTrack.Frames.Activate();
   else xapi.Command.Cameras.SpeakerTrack.Frames.Deactivate();
 
 
   // send required commands to this codec
 
   resumeSpeakerTrack();
+}
+
+function handleFramesOn() {
+  console.log('Activating frames as instructed by Main...')
+  xapi.Command.Cameras.SpeakerTrack.Frames.Activate();
+  forceFramesOn = true;
+}
+
+function handleFramesOff() {
+  console.log('Deactivating frames as instructed by Main...')
+  xapi.Command.Cameras.SpeakerTrack.Frames.Deactivate();
+  forceFramesOn = false;
 }
 
 function resumeSpeakerTrack() {

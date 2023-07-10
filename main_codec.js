@@ -13,9 +13,9 @@ or implied.
 *
 * Repository: gve_devnet_webex_devices_executive_room_multi_aux_switching_macro
 * Macro file: main_codec
-* Version: 1.0.4
-* Released: June 29, 2023
-* Latest RoomOS version tested: 11.5.1.9
+* Version: 1.0.5
+* Released: July 10, 2023
+* Latest RoomOS version tested: 11.6.1.5
 *
 * Macro Author:      	Gerardo Chaves
 *                    	Technical Solutions Architect
@@ -264,6 +264,7 @@ let presenterSuspendedAuto = false;
 var top_speakers_connectors = [];
 var mic_connectors_map = {}
 
+
 // create a map of microphones to corresponding main video connector
 config.compositions.forEach(compose => {
   compose.mics.forEach(mic => {
@@ -407,6 +408,26 @@ const PANEL_Control_Automation = `<Extensions>
         <Options>size=null;fontSize=normal;align=center</Options>
       </Widget>
     </Row>
+    <Row>
+    <Name>Force Frames</Name>
+    <Widget>
+      <WidgetId>widget_15</WidgetId>
+      <Name>Off</Name>
+      <Type>Text</Type>
+      <Options>size=1;fontSize=normal;align=center</Options>
+    </Widget>
+    <Widget>
+      <WidgetId>widget_force_frames</WidgetId>
+      <Type>ToggleButton</Type>
+      <Options>size=1</Options>
+    </Widget>
+    <Widget>
+      <WidgetId>widget_16</WidgetId>
+      <Name>On</Name>
+      <Type>Text</Type>
+      <Options>size=null;fontSize=normal;align=center</Options>
+    </Widget>
+  </Row>
     <PageId>panel_manual_override</PageId>
     <Options/>
   </Page>
@@ -506,6 +527,8 @@ let webrtc_mode = false;
 
 let isOSTen = false;
 let isOSEleven = false;
+
+let forceFramesOn = false;
 
 /////////////////////////////////////////////////////////////////////////////////////////
 // UTILITIES
@@ -1203,7 +1226,7 @@ async function recallSideBySideMode() {
 // TOUCH 10 UI FUNCTION HANDLERS
 /////////////////////////////////////////////////////////////////////////////////////////
 
-function handleOverrideWidget(event) {
+async function handleOverrideWidget(event) {
   if (event.WidgetId === 'widget_override') {
     console.log("Camera Control button selected.....")
     if (event.Value === 'off') {
@@ -1249,6 +1272,22 @@ function handleOverrideWidget(event) {
       // TODO: determine if turning off self-view should also turn off fullscreenmode
       xapi.Command.Video.Selfview.Set({ FullscreenMode: 'On', Mode: 'On', OnMonitorRole: 'First' });
     }
+  }
+
+  if (event.WidgetId === 'widget_force_frames' && isOSEleven) {
+    console.log("Force frames toggle button selected.....")
+    if (event.Value === 'off') {
+      forceFramesOn = false;
+      xapi.Command.Cameras.SpeakerTrack.Frames.Deactivate();
+      await sendIntercodecMessage('force_frames_off')
+
+    }
+    else {
+      forceFramesOn = true;
+      xapi.Command.Cameras.SpeakerTrack.Frames.Activate();
+      await sendIntercodecMessage('force_frames_on')
+    }
+
   }
 }
 
