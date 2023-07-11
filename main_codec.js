@@ -13,8 +13,8 @@ or implied.
 *
 * Repository: gve_devnet_webex_devices_executive_room_multi_aux_switching_macro
 * Macro file: main_codec
-* Version: 1.0.5
-* Released: July 10, 2023
+* Version: 1.0.6
+* Released: July 11, 2023
 * Latest RoomOS version tested: 11.6.1.5
 *
 * Macro Author:      	Gerardo Chaves
@@ -229,7 +229,6 @@ xapi.Config.UserInterface.Features.Call.MidCallControls.set("Hidden");
 TIMERS and THRESHOLDS
 */
 
-
 // Time to wait for silence before setting Speakertrack Side-by-Side mode
 const SIDE_BY_SIDE_TIME = 10000; // 10 seconds
 // Time to wait before switching to a new speaker
@@ -240,26 +239,46 @@ const INITIAL_CALL_TIME = 15000; // 15 seconds
 // transmitting video during camera movement for P60 and PTZ cameras
 const VIDEO_SOURCE_SWITCH_WAIT_TIME = 500; // 500 ms
 
-/////////////////////////////////////////////////////////////////////////////////////////
-// CONSTANTS/ENUMS
-/////////////////////////////////////////////////////////////////////////////////////////
-
-
 // Microphone High/Low Thresholds
 const MICROPHONELOW = 6;
 const MICROPHONEHIGH = 25;
 
-const minOS10Version = '10.17.1.0';
-const minOS11Version = '11.0.0.4';
+/*
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++ SECTION 5 - SECTION 5 - SECTION 5 - SECTION 5 - SECTION 5 - SECTION 5 +
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
-let presenterTrackConfigured = false;
-let presenterSuspendedAuto = false;
+Presenter Track Q&A Mode
+*/
+// ALLOW_PRESENTER_QA_MODE controls if the custom panel for activating PresenterTrack with or without 
+// Q&A Mode is shown in the Touch10 or Navigator. Without it, you cannot activate PresenterTrack Q&A mode
+const ALLOW_PRESENTER_QA_MODE = false;
+
+//PRESENTER_QA_AUDIENCE_MIC_IDS is an array for Mic IDs that are being used for the audience. 
+const PRESENTER_QA_AUDIENCE_MIC_IDS = [1, 2]
+
+
+// PRESENTER_QA_KEEP_COMPOSITION_TIME is the time in ms that the macro will keep sending
+// a composed image of the presenter and an audience member asking a question after the question
+// has been asked by any audience member. If different audience members ask questions while the composition 
+// is being shown after NEW_SPEAKER_TIME milliseconds have passed, the composition will change 
+// to use that new audience member instead of the original. This will continue until no other audience members have
+// spoken for PRESENTER_QA_KEEP_COMPOSITION_TIME milliseconds and then the code will resume sending only the 
+// full video feed from the Presenter camera 
+const PRESENTER_QA_KEEP_COMPOSITION_TIME = 7000
 
 /*
 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 + DO NOT EDIT ANYTHING BELOW THIS LINE                                  +
 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 */
+
+
+
+const minOS10Version = '10.17.1.0';
+const minOS11Version = '11.0.0.4';
+
+
 
 var top_speakers_connectors = [];
 var mic_connectors_map = {}
@@ -299,6 +318,11 @@ async function validate_config() {
   // check for duplicates in config.monitorMics
   if (new Set(config.monitorMics).size !== config.monitorMics.length)
     await disableMacro(`config validation fail: config.monitorMics cannot have duplicates. Current value: ${config.monitorMics} `);
+
+  // Check for falid audience mics configured for the Presenter QA Mode feature
+  if (ALLOW_PRESENTER_QA_MODE)
+    if (!PRESENTER_QA_AUDIENCE_MIC_IDS.every(r => config.monitorMics.includes(r)))
+      await disableMacro(`config validation fail: PRESENTER_QA_AUDIENCE_MIC_IDS can only specify values contained in config.monitorMics . Current values config.monitorMics: ${config.monitorMics} PRESENTER_QA_AUDIENCE_MIC_IDS: ${PRESENTER_QA_AUDIENCE_MIC_IDS}`);
 
 
   hasOverview = false;
@@ -507,6 +531,7 @@ for (var i in config.monitorMics) {
 }
 let lowWasRecalled = false;
 let lastActiveHighInput = 0;
+let lastSourceDict = { SourceID: '1' }
 let allowSideBySide = true;
 let sideBySideTimer = null;
 let InitialCallTimer = null;
@@ -529,6 +554,13 @@ let isOSTen = false;
 let isOSEleven = false;
 
 let forceFramesOn = false;
+
+let PRESENTER_QA_MODE = false
+
+let presenterTrackConfigured = false;
+let presenterTracking = false;
+let presenterQAKeepComposition = false;
+let qaCompositionTimer = null;
 
 /////////////////////////////////////////////////////////////////////////////////////////
 // UTILITIES
@@ -561,7 +593,20 @@ async function check4_Minimum_Version_Required(minimumOs) {
 // INITIALIZATION
 /////////////////////////////////////////////////////////////////////////////////////////
 
-
+function evalPresenterTrack(value) {
+  let currentVal = '1';
+  if (presenterTrackConfigured) {
+    if (value === 'Follow' || value === 'Persistent') {
+      if (PRESENTER_QA_MODE) {
+        currentVal = '3';
+      }
+      else {
+        currentVal = '2';
+      }
+    }
+    xapi.command('UserInterface Extensions Widget SetValue', { WidgetId: 'widget_pt_settings', Value: currentVal }).catch(handleMissingWigetError);
+  }
+}
 
 function evalFullScreen(value) {
   if (value == 'On') {
@@ -606,6 +651,7 @@ async function init() {
   // check for presenterTrack being configured
   let enabledGet = await xapi.Config.Cameras.PresenterTrack.Enabled.get()
   presenterTrackConfigured = (enabledGet == 'True') ? true : false;
+  addCustomAutoQAPanel();
 
   let codecIPArray = [];
 
@@ -823,16 +869,7 @@ function stopAutomation(reset_source = true) {
 function checkMicLevelsToSwitchCamera() {
   // make sure we've gotten enough samples from each mic in order to do averages
   if (allowCameraSwitching) {
-    /*
-    // figure out which of the inputs has the highest average level then perform logic for that input *ONLY* if allowCameraSwitching is true
-    let array_key = largestMicValue();
-    let array = [];
-    array = micArrays[array_key];
-    // get the average level for the currently active input
-    let average = averageArray(array);
-    //get the input number as an int since it is passed as a string (since it is a key to a dict)
-    let input = parseInt(array_key);
-*/
+
     // first let's check for top N mics with topNMicValue() which will also fill out needed
     // composition to use to set main video source 
     let topMics = topNMicValue();
@@ -910,7 +947,7 @@ async function makeCameraSwitch(input, average) {
   if (perma_sbs) input = 0; // if permanent side by side is selected in the custom panel, just always show the overview
 
   if (input >= 0) {
-    let sourceDict = { SourceID: '0' } // Just initialize
+    let sourceDict = { ConnectorID: 0 } // Just initialize
     config.compositions.forEach(compose => {
       if (compose.mics.includes(input)) {
         console.log(`Setting to composition = ${compose.name}`);
@@ -925,34 +962,42 @@ async function makeCameraSwitch(input, average) {
       }
     })
 
-    if (!('PresetZone' in sourceDict)) {
-
-      // the Video Input SetMainVideoSource does not work while Speakertrack is active
-      // so we need to turn it off in case the previous video input was from a source where
-      // SpeakerTrack is used.
-      //xapi.command('Cameras SpeakerTrack Deactivate').catch(handleError);
-      pauseSpeakerTrack();
-      // Switch to the source that is speficied in the same index position in MAP_CAMERA_SOURCE_IDS
-      //sourceDict["SourceID"] = selectedSource.toString();
-      console.log("Switching to input with SetMainVideoSource with dict: ", sourceDict)
-      xapi.Command.Video.Input.SetMainVideoSource(sourceDict).catch(handleError);
-      if (sourceDict.ConnectorId.includes(MAIN_CODEC_QUADCAM_SOURCE_ID)) {
-        // if the codec is using a QuadCam (no SpeakerTrack camera allowed) then
-        // turn back on SpeakerTrack function on the codec in case it was turned off in side by side mode.
-        resumeSpeakerTrack();
-      }
-
-      // if we are not switching to a camera zone with PTZ cameras, we need to re-set the
-      // lastActivePTZCameraZone Object to the "non-camera" value of Z0 as when we started the macro
-      // because the decision tree on switching or not from a camera that was already pointed at someone
-      // relies on the last video input source having been a PTZ camera video zone
-      lastActivePTZCameraZoneObj = Z0;
-      lastActivePTZCameraZoneCamera = '0';
+    if (presenterTracking) {
+      // if we have selected Presenter Q&A mode and the codec is currently in presenterTrack mode, invoke
+      // that specific camera switching logic contained in presenterQASwitch()
+      if (PRESENTER_QA_MODE && !webrtc_mode) presenterQASwitch(input, sourceDict);
+      // if the codec is in presentertracking but not in PRESENTER_QA_MODE , simply ignore the request to switch
+      // cameras since we need to keep sending the presenterTrack camera. 
     }
     else {
-      switchToVideoZone(sourceDict.PresetZone);
-    }
+      if (!('PresetZone' in sourceDict)) {
 
+        // the Video Input SetMainVideoSource does not work while Speakertrack is active
+        // so we need to turn it off in case the previous video input was from a source where
+        // SpeakerTrack is used.
+        //xapi.command('Cameras SpeakerTrack Deactivate').catch(handleError);
+        pauseSpeakerTrack();
+        // Switch to the source that is speficied in the same index position in MAP_CAMERA_SOURCE_IDS
+        //sourceDict["SourceID"] = selectedSource.toString();
+        console.log("Switching to input with SetMainVideoSource with dict: ", sourceDict)
+        xapi.Command.Video.Input.SetMainVideoSource(sourceDict).catch(handleError);
+        if (sourceDict.ConnectorId.includes(MAIN_CODEC_QUADCAM_SOURCE_ID)) {
+          // if the codec is using a QuadCam (no SpeakerTrack camera allowed) then
+          // turn back on SpeakerTrack function on the codec in case it was turned off in side by side mode.
+          resumeSpeakerTrack();
+        }
+
+        // if we are not switching to a camera zone with PTZ cameras, we need to re-set the
+        // lastActivePTZCameraZone Object to the "non-camera" value of Z0 as when we started the macro
+        // because the decision tree on switching or not from a camera that was already pointed at someone
+        // relies on the last video input source having been a PTZ camera video zone
+        lastActivePTZCameraZoneObj = Z0;
+        lastActivePTZCameraZoneCamera = '0';
+      }
+      else {
+        switchToVideoZone(sourceDict.PresetZone);
+      }
+    }
   } else {
     // Here we switch to the previously prepared composition that corresponds to 
     // the top N active speakers. 
@@ -1028,19 +1073,96 @@ function setMainVideoSource(thePresetVideoSource) {
   xapi.command('Video Input SetMainVideoSource', sourceDict).catch(handleError);
 }
 
-function largestMicValue() {
-  // figure out which of the inputs has the highest average level and return the corresponding key
-  let currentMaxValue = 0;
-  let currentMaxKey = '';
-  let theAverage = 0;
-  for (var i in config.monitorMics) {
-    theAverage = averageArray(micArrays[config.monitorMics[i].toString()]);
-    if (theAverage >= currentMaxValue) {
-      currentMaxKey = config.monitorMics[i].toString();
-      currentMaxValue = theAverage;
-    }
+
+
+// function to actually switch the camera input when in presentertrack Q&A mode
+async function presenterQASwitch(input, sourceDict) {
+  //TODO: if sourceDict contains a presetZone, I will need to do something similar to what is in switchToVideoZone()
+  // or even call that function but to select the preset to show only on the part of the composition for the 
+  // audience member asking the question if possible. 
+  if (!(PRESENTER_QA_AUDIENCE_MIC_IDS.includes(input))) {
+    // Once the presenter starts talkin, we need to initiate composition timer
+    // to remove composition only after the configured time has passed.
+    restartCompositionTimer();
   }
-  return currentMaxKey;
+  else if (lastActiveHighInput != input) {
+
+    if ('PresetZone' in sourceDict) {
+      let selectedSource = sourceDict.PresetZone;
+      var selectedSourcePrimaryCamID = '';
+      var selectedSourceSecondaryCamID = '';
+      var thePresetId = 0;
+      var thePresetVideoSource = 0;
+      selectedSourcePrimaryCamID = await getPresetCamera(selectedSource['primary']);
+      thePresetId = selectedSource['primary'];
+      thePresetVideoSource = MAP_PTZ_CAMERA_VIDEO_SOURCE_ID[selectedSourcePrimaryCamID]
+
+      // Extract extra values from preset
+      const value = await xapi.Command.Camera.Preset.Show({ PresetId: selectedSource['primary'] });
+      // set the camera with the preset values without activating the present since we need to compose
+      // it in
+      //TODO: Check to see if Lens parameter is needed below
+      xapi.Command.Camera.PositionSet(
+        { CameraId: selectedSourcePrimaryCamID, Focus: value.Focus, Pan: value.Pan, Tilt: value.Tilt, Zoom: value.Zoom });
+      // Replace the sourceDict that had the preset with just the correct Connector ID for the rest of the logic
+      sourceDict = { 'ConnectorId': thePresetVideoSource } //TODO: test if this is the correct ConnectorID
+
+    }
+
+
+    // here we need to compose presenter with other camera where someone is speaking
+    if ('ConnectorId' in sourceDict && sourceDict['ConnectorId'].length == 1) {
+      let presenterSource = await xapi.Config.Cameras.PresenterTrack.Connector.get();
+      let connectorDict = { ConnectorId: [presenterSource, sourceDict['ConnectorId'][0]] };
+      console.log("Trying to use this for connector dict in presenterQASwitch(): ", connectorDict)
+
+      setComposedQAVideoSource(connectorDict);
+
+      // Restart the timer that tells how long to keep the composition for when the same
+      // person is asking questions or the presenter is talking
+      //restartCompositionTimer();
+
+      // Actually, when audience members speak, we must stop the composition
+      // timer since only silence or speaker speaking should start it!
+      stopCompositionTimer();
+    } else {
+      console.log(`Trying to use ${sourceDict} in presenterQASwitch() but is preset or multiple connectors, should be just 1 ConnectorId`);
+      return;
+    }
+
+  }
+
+  // send required messages to auxiliary codec that also turns on speakertrack over there
+  await sendIntercodecMessage('automatic_mode');
+
+  lastActiveHighInput = input;
+  restartNewSpeakerTimer();
+}
+
+function setComposedQAVideoSource(connectorDict) {
+
+  if (webrtc_mode && !isOSEleven) xapi.Command.Video.Input.MainVideo.Mute();
+
+  // always put speakertrack on background mode when switching around inputs 
+  pauseSpeakerTrack();
+
+  console.log("In setComposedQAVideoSource() switching to input with SetMainVideoSource with dict: ", connectorDict)
+  xapi.command('Video Input SetMainVideoSource', connectorDict).catch(handleError);
+  lastSourceDict = connectorDict;
+
+  const payload = { EditMatrixOutput: { sources: connectorDict["ConnectorId"] } };
+
+  setTimeout(function () {
+    //Let USB Macro know we are composing
+    localCallout.command(payload).post()
+  }, 250) //250ms delay to allow the main source to resolve first
+
+  // only disable background mode if the audience camera is a QuadCam
+  if (connectorDict.ConnectorId[1] == MAIN_CODEC_QUADCAM_SOURCE_ID) resumeSpeakerTrack();
+
+  //if (webrtc_mode && !isOSEleven) xapi.Command.Video.Input.MainVideo.Unmute();
+  if (webrtc_mode && !isOSEleven) setTimeout(function () { xapi.Command.Video.Input.MainVideo.Unmute() }, WEBRTC_VIDEO_UNMUTE_WAIT_TIME);
+
 }
 
 function topNMicValue() {
@@ -1062,9 +1184,9 @@ function topNMicValue() {
   input = parseInt(sorted[sorted.length - 1][0])
   average = parseInt(sorted[sorted.length - 1][1])
 
-  // check for auto_top_speakers disabled or less than 2 max_speakers to just return top mic and value
+  // check for auto_top_speakers disabled or less than 2 max_speakers or presenterTracking to just return top mic and value
   if (sorted.length > 0) {
-    if (!auto_top_speakers.enabled || auto_top_speakers.max_speakers < 2) return [input, average]
+    if (!auto_top_speakers.enabled || (auto_top_speakers.max_speakers < 2 || presenterTracking)) return [input, average]
   } else { return [0, 0]; }
 
   // now that we know that auto_top_speakers is enabled and looking for 2 or more top speaker segments,
@@ -1222,12 +1344,46 @@ async function recallSideBySideMode() {
   lowWasRecalled = true;
 }
 
+async function recallFullPresenter() {
+  console.log("Recalling full presenter in PresenterTrack mode....")
+  // the Video Input SetMainVideoSource does not work while Speakertrack is active
+  // so we need to pause it in case the we were doing full composition to be able to switch
+  // to just the presenter camera
+  pauseSpeakerTrack();
+  if (webrtc_mode && !isOSEleven) xapi.Command.Video.Input.MainVideo.Mute();
+
+  let presenterSource = await xapi.Config.Cameras.PresenterTrack.Connector.get();
+  console.log("Obtained presenter source as: ", presenterSource)
+  let connectorDict = { ConnectorId: presenterSource };
+  xapi.command('Video Input SetMainVideoSource', connectorDict).catch(handleError);
+  lastSourceDict = connectorDict;
+  if (webrtc_mode && !isOSEleven) setTimeout(function () { xapi.Command.Video.Input.MainVideo.Unmute() }, WEBRTC_VIDEO_UNMUTE_WAIT_TIME);
+  //resumeSpeakerTrack(); // we do not want to leave background mode on
+}
+
+async function recallQuadCam() {
+  console.log("Recalling QuadCam after manually exiting PresenterTrack mode....")
+  pauseSpeakerTrack();
+  if (webrtc_mode && !isOSEleven) xapi.Command.Video.Input.MainVideo.Mute();
+  //let currentSTCameraID = QUAD_CAM_ID; 
+  let currentSTCameraID = await xapi.Status.Cameras.SpeakerTrack.ActiveConnector.get(); //TODO: Test if it obtains the correct camera ID
+  console.log('In recallQuadCam Obtained currentSTCameraID as: ', currentSTCameraID)
+  let connectorDict = { SourceId: currentSTCameraID }; xapi.command('Video Input SetMainVideoSource', connectorDict).catch(handleError);
+  lastSourceDict = connectorDict;
+  if (webrtc_mode && !isOSEleven) setTimeout(function () { xapi.Command.Video.Input.MainVideo.Unmute() }, WEBRTC_VIDEO_UNMUTE_WAIT_TIME);
+  resumeSpeakerTrack(); // we do not want to leave background mode on
+
+
+}
+
 /////////////////////////////////////////////////////////////////////////////////////////
 // TOUCH 10 UI FUNCTION HANDLERS
 /////////////////////////////////////////////////////////////////////////////////////////
 
 async function handleOverrideWidget(event) {
-  if (event.WidgetId === 'widget_override') {
+  let widgetId = event.WidgetId;
+
+  if (widgetId === 'widget_override') {
     console.log("Camera Control button selected.....")
     if (event.Value === 'off') {
 
@@ -1245,7 +1401,7 @@ async function handleOverrideWidget(event) {
 
   }
 
-  if (event.WidgetId === 'widget_sbs_control') {
+  if (widgetId === 'widget_sbs_control') {
     console.log("Side by side control selected.....")
     if (event.Value === 'off') {
       console.log("Side by side control is set to overview...");
@@ -1259,7 +1415,7 @@ async function handleOverrideWidget(event) {
     lastActiveHighInput = 0;
   }
 
-  if (event.WidgetId === 'widget_FS_selfview') {
+  if (widgetId === 'widget_FS_selfview') {
     console.log("Selfview button selected.....")
     if (event.Value === 'off') {
       console.log("Selfview is set to Off...");
@@ -1274,7 +1430,7 @@ async function handleOverrideWidget(event) {
     }
   }
 
-  if (event.WidgetId === 'widget_force_frames' && isOSEleven) {
+  if (widgetId === 'widget_force_frames' && isOSEleven) {
     console.log("Force frames toggle button selected.....")
     if (event.Value === 'off') {
       forceFramesOn = false;
@@ -1289,8 +1445,132 @@ async function handleOverrideWidget(event) {
     }
 
   }
+
+  if (widgetId === 'widget_pt_settings') {
+    let presenterSource = 0;
+    let connectorDict = {};
+    if (presenterTrackConfigured) {
+      if (event.Type == 'released')
+        switch (event.Value) {
+          case '1':
+            console.log('Off');
+            console.log("Turning off PresenterTrack...");
+            //recallFullPresenter();
+            xapi.Command.Cameras.PresenterTrack.Set({ Mode: 'Off' });
+            PRESENTER_QA_MODE = false;
+            activateSpeakerTrack();
+            recallQuadCam();
+            break;
+
+          case '2':
+            console.log('On');
+            console.log("Turning on PresenterTrack only...");
+            if (webrtc_mode && !isOSEleven) xapi.Command.Video.Input.MainVideo.Mute();
+            deactivateSpeakerTrack();
+            presenterSource = await xapi.Config.Cameras.PresenterTrack.Connector.get();
+            connectorDict = { ConnectorId: presenterSource };
+            xapi.command('Video Input SetMainVideoSource', connectorDict).catch(handleError);
+            lastSourceDict = connectorDict;
+            if (webrtc_mode && !isOSEleven) setTimeout(function () { xapi.Command.Video.Input.MainVideo.Unmute() }, WEBRTC_VIDEO_UNMUTE_WAIT_TIME);
+            xapi.Command.Cameras.PresenterTrack.Set({ Mode: 'Persistent' });
+            PRESENTER_QA_MODE = false;
+            break;
+
+          case '3':
+            console.log('QA Mode');
+            console.log("Turning on PresenterTrack with QA Mode...");
+            if (webrtc_mode && !isOSEleven) xapi.Command.Video.Input.MainVideo.Mute();
+            activateSpeakerTrack(); //TODO: test if not activating speakertrack here when you have an SP60 allows it to work in QA mode
+            //pauseSpeakerTrack();
+            presenterSource = await xapi.Config.Cameras.PresenterTrack.Connector.get();
+            connectorDict = { ConnectorId: presenterSource };
+            xapi.command('Video Input SetMainVideoSource', connectorDict).catch(handleError);
+            lastSourceDict = connectorDict;
+            xapi.Command.Cameras.PresenterTrack.Set({ Mode: 'Persistent' });
+            pauseSpeakerTrack();
+            if (webrtc_mode && !isOSEleven) setTimeout(function () { xapi.Command.Video.Input.MainVideo.Unmute() }, WEBRTC_VIDEO_UNMUTE_WAIT_TIME);
+
+            PRESENTER_QA_MODE = true;
+            //resumeSpeakerTrack();
+            break;
+
+        }
+    }
+    else {
+      console.log("PresenterTrack not configured!!!");
+    }
+
+  }
 }
 
+
+
+function addCustomAutoQAPanel() {
+
+  let presenterTrackButtons = `
+  <Name>PresenterTrack</Name>
+  <Widget>
+    <WidgetId>widget_pt_settings</WidgetId>
+    <Type>GroupButton</Type>
+    <Options>size=4</Options>
+    <ValueSpace>
+      <Value>
+        <Key>1</Key>
+        <Name>Off</Name>
+      </Value>
+      <Value>
+        <Key>2</Key>
+        <Name>On w/o QA</Name>
+      </Value>
+      <Value>
+        <Key>3</Key>
+        <Name>On with QA</Name>
+      </Value>
+    </ValueSpace>
+  </Widget>
+  `;
+  let presenterTrackButtonsDisabled = `
+  <Name>PresenterTrack</Name>
+  <Widget>
+    <WidgetId>widget_pt_disabled</WidgetId>
+    <Name>Not configured</Name>
+    <Type>Text</Type>
+    <Options>size=3;fontSize=normal;align=center</Options>
+  </Widget>`;
+
+  // Here we do the conditional assignment of the row
+  let presenterTrackRowValue = (presenterTrackConfigured) ? presenterTrackButtons : presenterTrackButtonsDisabled;
+
+  // add custom control panel for turning on/off automatic mode
+  if (ALLOW_PRESENTER_QA_MODE) {
+    xapi.Command.UserInterface.Extensions.Panel.Save({ PanelId: 'panel_auto_qa' },
+      `<Extensions>
+      <Version>1.9</Version>
+      <Panel>
+        <Origin>local</Origin>
+        <Location>HomeScreenAndCallControls</Location>
+        <Icon>Camera</Icon>
+        <Color>#07C1E4</Color>
+        <Name>PresenterTrack</Name>
+        <ActivityType>Custom</ActivityType>
+        <Page>
+          <Name>PresenterTrack Control</Name>
+          <Row>
+          ${presenterTrackRowValue}
+          </Row>
+          <PageId>panel_auto_qa</PageId>
+          <Options/>
+        </Page>
+      </Panel>
+    </Extensions>
+      `);
+  } else xapi.Command.UserInterface.Extensions.Panel.Remove({ PanelId: 'panel_auto_qa' });
+
+  if (presenterTrackConfigured && ALLOW_PRESENTER_QA_MODE) {
+    xapi.command('UserInterface Extensions Widget SetValue', { WidgetId: 'widget_pt_settings', Value: '1' }).catch(handleMissingWigetError);
+  }
+
+}
 
 /////////////////////////////////////////////////////////////////////////////////////////
 // ERROR HANDLING
@@ -1298,6 +1578,10 @@ async function handleOverrideWidget(event) {
 
 function handleError(error) {
   console.log(error);
+}
+
+function handleMissingWigetError(error) {
+  console.log('Trying to set widget that is not being shown...');
 }
 
 
@@ -1528,8 +1812,9 @@ function onInitialCallTimerExpired() {
   InitialCallTimer = null;
   if (!manual_mode) {
     allowCameraSwitching = true;
+
     //if (has_SpeakerTrack) xapi.command('Cameras SpeakerTrack Activate').catch(handleError);
-    resumeSpeakerTrack();
+    if (!presenterTracking) resumeSpeakerTrack();
   }
 }
 
@@ -1539,6 +1824,38 @@ function stopInitialCallTimer() {
     InitialCallTimer = null;
   }
 }
+
+
+function startCompositionTimer() {
+  if (qaCompositionTimer == null) {
+    presenterQAKeepComposition = true;
+    qaCompositionTimer = setTimeout(onCompositionTimerExpired, PRESENTER_QA_KEEP_COMPOSITION_TIME)
+  }
+}
+
+function stopCompositionTimer() {
+  if (qaCompositionTimer != null) {
+    clearTimeout(qaCompositionTimer);
+    qaCompositionTimer = null;
+  }
+}
+
+function restartCompositionTimer() {
+  stopCompositionTimer();
+  startCompositionTimer();
+}
+
+function onCompositionTimerExpired() {
+  presenterQAKeepComposition = false;
+  if (PRESENTER_QA_MODE && !webrtc_mode && presenterTracking) {
+    if (!PRESENTER_QA_AUDIENCE_MIC_IDS.includes(lastActiveHighInput)) {
+      // restore single presentertrackview because the person still speaking
+      // is not an audience member and the timer has expired (could also be due to silence)
+      recallFullPresenter();
+    }
+  }
+}
+
 
 function startNewSpeakerTimer() {
   if (newSpeakerTimer == null) {
@@ -1561,6 +1878,17 @@ function restartNewSpeakerTimer() {
 
 function onNewSpeakerTimerExpired() {
   allowNewSpeaker = true;
+}
+
+function activateSpeakerTrack() {
+  console.log(`activating speakertrack....`)
+  xapi.Command.Cameras.SpeakerTrack.Activate().catch(handleError);
+
+}
+
+function deactivateSpeakerTrack() {
+  console.log(`deactivating speakertrack....`)
+  xapi.Command.Cameras.SpeakerTrack.Deactivate().catch(handleError);
 }
 
 function resumeSpeakerTrack() {
@@ -1595,8 +1923,7 @@ xapi.Status.Cameras.PresenterTrack.Status.on(async value => {
   if (value === 'Follow' || value === 'Persistent') {
     if (!manual_mode) {
 
-      await stopAutomation(false);
-      presenterSuspendedAuto = true;
+      presenterTracking = true;
       if (allowSideBySide) {
         allowSideBySide = false;
         let presenterSource = await xapi.Config.Cameras.PresenterTrack.Connector.get();
@@ -1607,11 +1934,11 @@ xapi.Status.Cameras.PresenterTrack.Status.on(async value => {
     }
   }
   else {
-    if (presenterSuspendedAuto) {
-      startAutomation();
-      presenterSuspendedAuto = false;
-    }
+
+    presenterTracking = false;
   }
+  // Update custom panel
+  evalPresenterTrack(value);
 });
 
 init();
