@@ -56,7 +56,7 @@ If you only have one Webex Codec and will not be trying to use 2 QuadCams, you c
 that codec to control any allowed combination 4K PTZ cameras, a Cisco SpeakerTrack 60 camera array or a QuadCam camera.
 
 NOTE: The new "Top N speakers" feature is configured by editing the `auto_top_speakers` constant and settings the `enabled` atrribute to `true`. You then edit the `default_connectors` array to provide an
-ordered list of the connectors to use when showing the top N speakers and also the layout to use in the `layout` attribute. The `max_speakers` corresponts to the N value of the Top N speakers feature, so it allows you
+ordered list of the connectors to use when showing the top N speakers and also the layout to use in the `layout` attribute. The `max_speakers` corresponds to the N value of the Top N speakers feature, so it allows you
 to limit the number of top speakers to show. This feature does not yet work with compositions that include PTZ Zones.
 
 This sample also includes the GMM_Lib macro that is needed for compatibility with the USB Mode V3 Beta macro and improved inter-codec communication. Version 3.0.6 of that macro is also included but if you have a newer version you can use that one instead.  
@@ -124,7 +124,7 @@ During a call, you can use the PresenterTrack custom panel button to turn on Pre
 
 ![IMAGES/PresenterTrackQA.png](IMAGES/PresenterTrackQA.png)
 
-When in Presenter Track mode with with Q&A mode enabled, the macro will take care of keeping the focus on the presenter and if a question comes in from the audience it will compose the image of the presenter plus the audience member while they are talking and a few seconds afterwards (controlled by the PRESENTER_QA_KEEP_COMPOSITION_TIME configurable constant in the macro) it will focus back only on the presenter; this behavior is similar to the native "Classroom Mode" which is not compatible with this macro. If you select PresenterTrack without the Q&A mode option, the macro will make sure the presenter is always the one being shown in the call irrespective if anyone else in the room is speaking until you turn off PresenterTrack either via the custom panel or using the native camera controls of the codec.  
+When in Presenter Track mode with Q&A mode enabled, the macro will take care of keeping the focus on the presenter and if a question comes in from the audience it will compose the image of the presenter plus the audience member while they are talking and a few seconds afterwards (controlled by the PRESENTER_QA_KEEP_COMPOSITION_TIME configurable constant in the macro) it will focus back only on the presenter; this behavior is similar to the native "Classroom Mode" which is not compatible with this macro. If you select PresenterTrack without the Q&A mode option, the macro will make sure the presenter is always the one being shown in the call irrespective if anyone else in the room is speaking until you turn off PresenterTrack either via the custom panel or using the native camera controls of the codec.  
 NOTE: Even though the Q&A Mode for PresenterTrack should also work for compositions that include PTZ Zones, this has not been tested.
 
 The following actions with turn off the automatic behaviour for you in addition to manually turning it off:
