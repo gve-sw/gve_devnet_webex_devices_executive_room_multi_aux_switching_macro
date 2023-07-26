@@ -25,6 +25,12 @@ Webex Room Device macro to switch input source to camera pointed in the directio
 
 - Added PresenterTrack custom panel button to turn on/off the PresenterTrack feature and optionally enable an "Auto QA mode" which simulates Clasroom mode functionality.
 
+7/25/23 Updates: (version 1.0.7)
+
+- Fixed issue with the use of camera presets without any aux codecs
+- Fixed issue where it was removing the main codec quadcam segmente even if REMOVE_EMPTY_SEGMENTS was set to false
+- Fixed broken link to diagrams .pdf in README
+
 ## Contacts
 
 - Gerardo Chaves (gchaves@cisco.com)
@@ -67,7 +73,7 @@ do so, just create a new macro called "GMM_Lib" and copy the contents of the GMM
 it on; it is just a library that main_codec_macro and aux_codec_macro loads.
 
 You can find technical drawings and connection diagrams for the most common scenarios supported by this macro here:
-[Boardroom_2_0_System_Drawing_REV_3.pdf](Boardroom_2_0_System_Drawing_REV_3.pdf)
+[Multi_Aux_Boardroom_System_Drawing_REV_1.pdf](Multi_Aux_Boardroom_System_Drawing_REV_1.pdf)
 
 Notice that for the dual codec scenario, the camera input 2 on the Primary (Main) Codec comes from
 Output 1 on the Auxiliary codec since we are just using that codec to pass along the video from the QuadCam.

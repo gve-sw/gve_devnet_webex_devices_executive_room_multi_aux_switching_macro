@@ -13,8 +13,8 @@ or implied.
 *
 * Repository: gve_devnet_webex_devices_executive_room_multi_aux_switching_macro
 * Macro file: main_codec
-* Version: 1.0.6
-* Released: July 11, 2023
+* Version: 1.0.7
+* Released: July 25, 2023
 * Latest RoomOS version tested: 11.6.1.5
 *
 * Macro Author:      	Gerardo Chaves
@@ -76,6 +76,14 @@ const USE_ST_BG_MODE = true;
 
 const CODEC_MAIN = 1, CODEC_AUX = 2, CODEC_NONE = 0
 const Z0 = { 'primary': 0, 'secondary': 0 } //DO NOT DELETE OR COMMENT ME!!!!!
+const Z1 = { 'primary': 0, 'secondary': 0 } //DO NOT DELETE OR COMMENT ME!!!!!
+const Z2 = { 'primary': 0, 'secondary': 0 } //DO NOT DELETE OR COMMENT ME!!!!!
+const Z3 = { 'primary': 0, 'secondary': 0 } //DO NOT DELETE OR COMMENT ME!!!!!
+const Z4 = { 'primary': 0, 'secondary': 0 } //DO NOT DELETE OR COMMENT ME!!!!!
+const Z5 = { 'primary': 0, 'secondary': 0 } //DO NOT DELETE OR COMMENT ME!!!!!
+const Z6 = { 'primary': 0, 'secondary': 0 } //DO NOT DELETE OR COMMENT ME!!!!!
+const Z7 = { 'primary': 0, 'secondary': 0 } //DO NOT DELETE OR COMMENT ME!!!!!
+const Z8 = { 'primary': 0, 'secondary': 0 } //DO NOT DELETE OR COMMENT ME!!!!!
 
 // The config constant below contains general microphones and video sources and, alternatively, presetZones for both main
 // and  auxiliary codecs
@@ -171,11 +179,12 @@ const auto_top_speakers = {
 // do not use them in your compositions
 // NOTE: If you do not have a secondary preset for a zone, just use the same as the primary as the code needs that 'secondary' key present
 
-const Z1 = { 'primary': 11, 'secondary': 12 } // These are ok to change
-const Z2 = { 'primary': 14, 'secondary': 13 } // These are ok to change
+Z1.primary = 11; Z1.secondary = 12 // These are ok to change
+Z2.primary = 14; Z2.secondary = 13 // These are ok to change
+
 // Add camera zones below if needed, up to to Z8 but they can only reference
 // preset IDs 11-35 depending on which are configured on the codec. PresetID 30 IS RESERVED FOR USE BY THE MACRO
-//Z3= {'primary': 5,'secondary': 6}
+//Z3.primary = 5; Z1.secondary =6
 
 /*
 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -667,7 +676,9 @@ async function init() {
   })
 
   // now creating one connection object that sends to multiple aux codecs
-  auxCodecs = new GMM.Connect.IP(AUX_CODEC_USERNAME, AUX_CODEC_PASSWORD, codecIPArray)
+  // but only if there are aux codecs configured, otherwise leave as initialized as {}
+  if (codecIPArray.length > 0)
+    auxCodecs = new GMM.Connect.IP(AUX_CODEC_USERNAME, AUX_CODEC_PASSWORD, codecIPArray)
 
 
   // Stop any VuMeters that might have been left from a previous macro run with a different config.monitorMics constant
@@ -1292,7 +1303,7 @@ async function recallSideBySideMode() {
             })
 
           // check to see if the quadcam on the main codec sees people
-          if (MAIN_CODEC_QUADCAM_SOURCE_ID != 0) {
+          if (MAIN_CODEC_QUADCAM_SOURCE_ID != 0 && REMOVE_EMPTY_SEGMENTS) {
             let the_count = await xapi.Status.RoomAnalytics.PeopleCount.Current.get();
             if (the_count == 0) the_connectors.splice(the_connectors.indexOf(MAIN_CODEC_QUADCAM_SOURCE_ID), 1)
           }
@@ -1670,11 +1681,15 @@ GMM.Event.Receiver.on(event => {
 
 
 async function sendIntercodecMessage(message) {
-  console.log(`sendIntercodecMessage to all aux codecs: message = ${message}`);
-  await auxCodecs.status(message).passIP().queue().catch(e => {
-    alertFailedIntercodecComm("Error connecting to codec for second camera, please contact the Administrator");
-  });
+  // only send if there are aux codecs configured
+  if (Object.keys(auxCodecs).length != 0) {
+    console.log(`sendIntercodecMessage to all aux codecs: message = ${message}`);
+    await auxCodecs.status(message).passIP().queue().catch(e => {
+      alertFailedIntercodecComm("Error connecting to codec for second camera, please contact the Administrator");
+    });
+  }
 }
+
 
 
 GMM.Event.Queue.on(report => {
