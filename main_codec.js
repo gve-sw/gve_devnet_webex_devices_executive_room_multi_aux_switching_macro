@@ -13,9 +13,9 @@ or implied.
 *
 * Repository: gve_devnet_webex_devices_executive_room_multi_aux_switching_macro
 * Macro file: main_codec
-* Version: 1.0.7
-* Released: July 25, 2023
-* Latest RoomOS version tested: 11.6.1.5
+* Version: 1.0.8
+* Released: August 18, 2023
+* Latest RoomOS version tested: 11.7.1.6
 *
 * Macro Author:      	Gerardo Chaves
 *                    	Technical Solutions Architect
@@ -135,12 +135,12 @@ const config = {
       layout: 'Prominent',       // Layout to use
       presetZone: Z0 // use a camera preset zone (Z1, Z2, Z3, etc..) instead of a layout with specific connectors.
     },
-    {
-      name: 'Overview',          // IMPORTANT: There needs to be an overview composition with mics: [0]
-      codecIP: '',
-      mics: [0],
-      connectors: [3, 1, 2], // Specify here the video inputs and order to use to compose the "side by side" view
-      source: CODEC_NONE,
+    { //IMPORTANT: There needs to at least one overview composition with mics: [0].
+      name: 'Overview',  // The name used here will show up in the selector box in the custom Camera Control Panel if you configure more than one
+      codecIP: '',       // only the first 4 'overview' type compositions you set up will be offered in the selector box in the custom Camera Control Panel
+      mics: [0],      // IMPORTANT: There needs to at least one overview composition with mics: [0]
+      connectors: [3, 1, 2], // Specify here the video inputs and order to use to compose the "side by side" view. It can just be one. 
+      source: CODEC_NONE, // Use CODEC_NONE for these types of 'overview' compositions. 
       layout: 'Equal',       // Layout to use
       presetZone: Z0 // use a camera preset zone (Z1, Z2, Z3, etc..) instead of a layout with specific connectors.
     }
@@ -206,8 +206,9 @@ const MAIN_CODEC_QUADCAM_SOURCE_ID = 1;
 // to video source 1, camera ID 2 is connected to video source 2 and camera ID 3 is connected
 // to video source 6. You can define as many cameras as needed in this object or leave it with the
 // sample values defined below if you are not using PTZ cameras.
-// Only cameras involved in the camera zone preset objects (Z1 - Z8) need to be mapped here
-const MAP_PTZ_CAMERA_VIDEO_SOURCE_ID = { '2': 6, '3': 2, '4': 4 };
+// Only cameras involved in the camera zone preset objects (Z1 - Z8) and preset 30 need to be mapped here
+const MAP_PTZ_CAMERA_VIDEO_SOURCE_ID = { '1': 1, '2': 6, '3': 2, '4': 4 };
+
 
 // In RoomOS 11 there are multiple SpeakerTrack default behaviors to choose from on the navigator or
 // Touch10 device. Set ST_DEFAULT_BEHAVIOR to the one you want this macro to use from these choices:
@@ -291,13 +292,21 @@ const minOS11Version = '11.0.0.4';
 
 var top_speakers_connectors = [];
 var mic_connectors_map = {}
-
+var currOverviewComp = "";
+var overviewCompNames = []
 
 // create a map of microphones to corresponding main video connector
 config.compositions.forEach(compose => {
   compose.mics.forEach(mic => {
     mic_connectors_map[mic] = compose.connectors[0];
   })
+  // populate array of overview composition names and populate currOverviewComp 
+  // with first composition defined
+  if (compose.mics.length == 1)
+    if (compose.mics[0] == 0) {
+      overviewCompNames.push(compose.name)
+      if (currOverviewComp == "") currOverviewComp = compose.name;
+    }
 });
 var comp_sets_array = [] // array of top speaker compositions to keep track of for last speaker value
 
@@ -366,6 +375,35 @@ async function validate_config() {
 
   // all went well, can return true!
   return true;
+}
+
+let overviewCompRowValue = ''
+if (overviewCompNames.length > 1) {
+  overviewCompRowValue = `
+  <Row>
+  <Name>Overview Comp</Name>
+  <Widget>
+    <WidgetId>widget_ov_settings</WidgetId>
+    <Type>GroupButton</Type>
+    <Options>size=4</Options>
+    <ValueSpace>
+    `
+  overviewCompNames.forEach((overviewName, index) => {
+    if (index < 4) {
+      overviewCompRowValue += `
+      <Value>
+        <Key>${(index + 1).toString()}</Key>
+        <Name>${overviewName}</Name>
+      </Value>
+      `
+    }
+
+  })
+  overviewCompRowValue += `
+    </ValueSpace>
+  </Widget>
+  </Row>
+    `
 }
 
 const PANEL_Control_Automation = `<Extensions>
@@ -460,7 +498,8 @@ const PANEL_Control_Automation = `<Extensions>
       <Type>Text</Type>
       <Options>size=null;fontSize=normal;align=center</Options>
     </Widget>
-  </Row>
+    </Row>
+    ${overviewCompRowValue}
     <PageId>panel_manual_override</PageId>
     <Options/>
   </Page>
@@ -470,6 +509,12 @@ const PANEL_Control_Automation = `<Extensions>
 
 xapi.Command.UserInterface.Extensions.Panel.Save({ PanelId: 'panel_manual_override' },
   PANEL_Control_Automation);
+
+if (overviewCompNames.length > 1) {
+  let selectionID = overviewCompNames.indexOf(currOverviewComp);
+  if (selectionID >= 0 && selectionID < 4)
+    xapi.command('UserInterface Extensions Widget SetValue', { WidgetId: 'widget_ov_settings', Value: (selectionID + 1).toString() }).catch(handleMissingWigetError);
+}
 
 function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
@@ -550,6 +595,7 @@ let newSpeakerTimer = null;
 let manual_mode = true;
 let lastActivePTZCameraZoneObj = Z0;
 let lastActivePTZCameraZoneCamera = '0';
+
 
 
 let perma_sbs = false; // set to true if you want to start with side by side view always
@@ -957,10 +1003,13 @@ async function makeCameraSwitch(input, average) {
 
   if (perma_sbs) input = 0; // if permanent side by side is selected in the custom panel, just always show the overview
 
-  if (input >= 0) {
+  if (input > 0) {
     let sourceDict = { ConnectorID: 0 } // Just initialize
+    let initial_sourceDict = { ConnectorID: 0 } // to be able to compare later
     config.compositions.forEach(compose => {
-      if (compose.mics.includes(input)) {
+      if (compose.mics.includes(input))
+      //if (input != 0 || (input == 0 && compose.name == currOverviewComp)) 
+      {
         console.log(`Setting to composition = ${compose.name}`);
         if (('presetZone' in compose) && (compose.presetZone != Z0)) {
           console.log(`Setting Video Input to preset [${compose.presetZone}] `);
@@ -982,6 +1031,12 @@ async function makeCameraSwitch(input, average) {
     }
     else {
       if (!('PresetZone' in sourceDict)) {
+
+        if (JSON.stringify(sourceDict) == JSON.stringify(initial_sourceDict)) {
+          console.warn(`makeCameraSwitch(): Active mic did not match any composition and not in PresentarTrack mode... `)
+          restartNewSpeakerTimer();
+          return;
+        }
 
         // the Video Input SetMainVideoSource does not work while Speakertrack is active
         // so we need to turn it off in case the previous video input was from a source where
@@ -1009,7 +1064,7 @@ async function makeCameraSwitch(input, average) {
         switchToVideoZone(sourceDict.PresetZone);
       }
     }
-  } else {
+  } else if (input < 0) {
     // Here we switch to the previously prepared composition that corresponds to 
     // the top N active speakers. 
     // TODO: See how this would work with preset zones... might need to modify to call switchToVideoZone() for each zone involved
@@ -1022,6 +1077,7 @@ async function makeCameraSwitch(input, average) {
         Layout: auto_top_speakers.layout
       });
   }
+  else if (allowSideBySide) recallSideBySideMode();
 
   // send required messages to auxiliary codec that also turns on speakertrack over there
   await sendIntercodecMessage('automatic_mode');
@@ -1272,16 +1328,16 @@ async function recallSideBySideMode() {
   // a switch
   lastActivePTZCameraZoneObj = Z0;
   lastActivePTZCameraZoneCamera = '0';
-  if (!webrtc_mode) { //WebRTC mode does not support composing yet even in RoomOS11
-    let connectorDict = { ConnectorId: [0, 0] };
-    //connectorDict["ConnectorId"] = OVERVIEW_DOUBLE_SOURCE_IDS;
-    //console.log("Trying to use this for connector dict in recallSideBySideMode(): ", connectorDict)
-    //xapi.command('Video Input SetMainVideoSource', connectorDict).catch(handleError);
-    //if (has_SpeakerTrack) xapi.command('Cameras SpeakerTrack Deactivate').catch(handleError);
-    if (MAIN_CODEC_QUADCAM_SOURCE_ID > 0) pauseSpeakerTrack();
+  let connectorDict = { ConnectorId: [0, 0] };
+  //connectorDict["ConnectorId"] = OVERVIEW_DOUBLE_SOURCE_IDS;
+  //console.log("Trying to use this for connector dict in recallSideBySideMode(): ", connectorDict)
+  //xapi.command('Video Input SetMainVideoSource', connectorDict).catch(handleError);
+  //if (has_SpeakerTrack) xapi.command('Cameras SpeakerTrack Deactivate').catch(handleError);
+  if (MAIN_CODEC_QUADCAM_SOURCE_ID > 0) pauseSpeakerTrack();
 
-    config.compositions.forEach(async compose => {
-      if (compose.mics.includes(0)) {
+  config.compositions.forEach(async compose => {
+    if (compose.mics.includes(0))
+      if (compose.name == currOverviewComp) {
         console.log(`SideBySide setting to composition = ${compose.name}`);
         if (('presetZone' in compose) && (compose.presetZone != Z0)) {
           console.log(`SideBySide setting Video Input to preset [${compose.preset}] `);
@@ -1312,43 +1368,34 @@ async function recallSideBySideMode() {
           // overview
           if (the_connectors.length == 0) the_connectors = [...compose.connectors]
 
-          console.log(`Setting Video Input to connectors [${the_connectors}] and Layout: ${compose.layout}`);
-          let sourceDict = { ConnectorId: the_connectors, Layout: compose.layout }
-          xapi.Command.Video.Input.SetMainVideoSource(sourceDict);
-          xapi.command('Camera Preset Activate', { PresetId: 30 }).catch(handleError);
+          if (webrtc_mode && the_connectors.length > 1) { //WebRTC mode does not support composing yet even in RoomOS11
+            console.log(`Overview layout specifies connectors [${the_connectors}] and Layout: ${compose.layout}`);
+            console.log(`No support for composing multiple inputs when in WebRTC, setting prest 30 only... `)
+            xapi.command('Camera Preset Activate', { PresetId: 30 }).catch(handleError);
+            // now set main video source to where the camera is connected
+            let thePresetCameraID = await getPresetCamera(30)
+            let thePresetVideoSource = MAP_PTZ_CAMERA_VIDEO_SOURCE_ID[thePresetCameraID]
+            setTimeout(function () {
+              setMainVideoSource(thePresetVideoSource);
+            }, VIDEO_SOURCE_SWITCH_WAIT_TIME);
+          }
+          else {
+            console.log(`Setting Video Input to connectors [${the_connectors}] and Layout: ${compose.layout}`);
+            let sourceDict = { ConnectorId: the_connectors, Layout: compose.layout }
+            xapi.Command.Video.Input.SetMainVideoSource(sourceDict);
+            xapi.command('Camera Preset Activate', { PresetId: 30 }).catch(handleError);
 
-          const payload = { EditMatrixOutput: { sources: sourceDict["ConnectorId"] } };
-          setTimeout(function () {
-            //Let USB Macro know we are composing
-            localCallout.command(payload).post()
-          }, 250) //250ms delay to allow the main source to resolve first
+            const payload = { EditMatrixOutput: { sources: sourceDict["ConnectorId"] } };
+            setTimeout(function () {
+              //Let USB Macro know we are composing
+              localCallout.command(payload).post()
+            }, 250) //250ms delay to allow the main source to resolve first
+          }
         }
       }
-    })
+  })
 
 
-  }
-  else {
-    if (MAIN_CODEC_QUADCAM_SOURCE_ID > 0) pauseSpeakerTrack();
-    xapi.command('Camera Preset Activate', { PresetId: 30 }).catch(handleError);
-
-    // // Check for OVERVIEW_PRESET_ZONE. If set to default Z0, just SetMainVideoSource
-    // if (OVERVIEW_PRESET_ZONE == Z0) {
-    //   let sourceDict = { SourceID: '0' };
-    //   sourceDict["SourceID"] = OVERVIEW_SINGLE_SOURCE_ID.toString();
-    //   console.log("Trying to use this for source dict in recallSideBySideMode(): ", sourceDict)
-    //   xapi.command('Video Input SetMainVideoSource', sourceDict).catch(handleError);
-    //   //if (has_SpeakerTrack) xapi.command('Cameras SpeakerTrack Deactivate').catch(handleError);
-    //   if (has_SpeakerTrack) pauseSpeakerTrack();
-    // }
-    // else {
-    //   // If OVERVIEW_PRESET_ZONE is defined as something other than Z0, switch to that
-    //   console.log('Recall side by side mode switching to preset OVERVIEW_PRESET_ZONE...');
-    //   //if (has_SpeakerTrack) xapi.command('Cameras SpeakerTrack Deactivate').catch(handleError);
-    //   if (has_SpeakerTrack) pauseSpeakerTrack();
-    //   switchToVideoZone(OVERVIEW_PRESET_ZONE);
-    // }
-  }
   // send required messages to other codecs
   await sendIntercodecMessage('side_by_side');
   lastActiveHighInput = 0;
@@ -1454,6 +1501,46 @@ async function handleOverrideWidget(event) {
       xapi.Command.Cameras.SpeakerTrack.Frames.Activate();
       await sendIntercodecMessage('force_frames_on')
     }
+
+  }
+
+  if (widgetId === 'widget_ov_settings') {
+    if (event.Type == 'released')
+      switch (event.Value) {
+        case '1':
+          console.log('Selected overview 1');
+          if (overviewCompNames.length > 0) {
+            currOverviewComp = overviewCompNames[0];
+            console.log(`Overview name: ${currOverviewComp}`);
+          } else console.log('Invalid overview selection...')
+          break;
+
+        case '2':
+          console.log('Selected overview 2');
+          if (overviewCompNames.length > 1) {
+            currOverviewComp = overviewCompNames[1];
+            console.log(`Overview name: ${currOverviewComp}`);
+          } else console.log('Invalid overview selection...')
+          break;
+
+        case '3':
+          console.log('Selected overview 3');
+          if (overviewCompNames.length > 2) {
+            currOverviewComp = overviewCompNames[2];
+            console.log(`Overview name: ${currOverviewComp}`);
+          } else console.log('Invalid overview selection...')
+          break;
+
+        case '4':
+          console.log('Selected overview 4');
+          if (overviewCompNames.length > 3) {
+            currOverviewComp = overviewCompNames[3];
+            console.log(`Overview name: ${currOverviewComp}`);
+          } else console.log('Invalid overview selection...')
+          break;
+
+      }
+
 
   }
 

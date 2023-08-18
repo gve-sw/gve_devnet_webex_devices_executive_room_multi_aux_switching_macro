@@ -28,8 +28,13 @@ Webex Room Device macro to switch input source to camera pointed in the directio
 7/25/23 Updates: (version 1.0.7)
 
 - Fixed issue with the use of camera presets without any aux codecs
-- Fixed issue where it was removing the main codec quadcam segmente even if REMOVE_EMPTY_SEGMENTS was set to false
+- Fixed issue where it was removing the main codec quadcam segment even if REMOVE_EMPTY_SEGMENTS was set to false
 - Fixed broken link to diagrams .pdf in README
+
+8/18/23 Updates: (version 1.0.8)
+
+- Fixed issue with detecting activity on mics that are being monitored but not assiged to any particular composition
+- Added the ability to configure multiple Overview compositions where the `mics` value is set to [0] so that in the Camera Control custom panel there will appear a selector for up to 4 such compostions ot use when the room falls silent or the mute button is pressed. If more than 4 overview compositions are configured, only the first 4 are used.
 
 ## Contacts
 
