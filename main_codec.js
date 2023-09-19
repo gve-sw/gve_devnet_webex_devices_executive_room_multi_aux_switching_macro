@@ -13,9 +13,9 @@ or implied.
 *
 * Repository: gve_devnet_webex_devices_executive_room_multi_aux_switching_macro
 * Macro file: main_codec
-* Version: 1.0.8
-* Released: August 18, 2023
-* Latest RoomOS version tested: 11.7.1.6
+* Version: 1.0.9
+* Released: September 19, 2023
+* Latest RoomOS version tested: 11.8.1.7
 *
 * Macro Author:      	Gerardo Chaves
 *                    	Technical Solutions Architect
@@ -197,18 +197,8 @@ Z2.primary = 14; Z2.secondary = 13 // These are ok to change
 // MAIN_CODEC_QUADCAM_SOURCE_ID should contain the SourceID where the QuadCam connected
 // to the main codec (if any) is connected. This it typically SourceID 1. If no QuadCam is connected
 // then set this to 0
+//TODO: check with peripherals connected to see if a QuadCam is connected or not 
 const MAIN_CODEC_QUADCAM_SOURCE_ID = 1;
-
-// Mapping of video sources to CameraIDs for PTZ cameras
-// MAP_PTZ_CAMERA_VIDEO_SOURCE_ID contains an object of key/value pairs that maps
-// each Camera ID (key) to the video input source ID it is connected to (value).
-// so, if we set it to { '1':1, '2':2, '3':6 } then it indicates that camera ID 1 is connected
-// to video source 1, camera ID 2 is connected to video source 2 and camera ID 3 is connected
-// to video source 6. You can define as many cameras as needed in this object or leave it with the
-// sample values defined below if you are not using PTZ cameras.
-// Only cameras involved in the camera zone preset objects (Z1 - Z8) and preset 30 need to be mapped here
-const MAP_PTZ_CAMERA_VIDEO_SOURCE_ID = { '1': 1, '2': 6, '3': 2, '4': 4 };
-
 
 // In RoomOS 11 there are multiple SpeakerTrack default behaviors to choose from on the navigator or
 // Touch10 device. Set ST_DEFAULT_BEHAVIOR to the one you want this macro to use from these choices:
@@ -596,6 +586,8 @@ let manual_mode = true;
 let lastActivePTZCameraZoneObj = Z0;
 let lastActivePTZCameraZoneCamera = '0';
 
+let manualSetFrames = false;
+
 
 
 let perma_sbs = false; // set to true if you want to start with side by side view always
@@ -616,6 +608,9 @@ let presenterTrackConfigured = false;
 let presenterTracking = false;
 let presenterQAKeepComposition = false;
 let qaCompositionTimer = null;
+
+var MAP_PTZ_CAMERA_VIDEO_SOURCE_ID = {};
+
 
 /////////////////////////////////////////////////////////////////////////////////////////
 // UTILITIES
@@ -701,6 +696,15 @@ async function init() {
   if (!await validate_config()) disableMacro("invalid config")
   // make sure Preset 30 exists, if not create it with just an overview shot of camera ID 1 which should be the QuadCam
   checkOverviewPreset();
+
+  // create camera ID to source ID Map
+  let allCameras = await xapi.Status.Cameras.Camera.get()
+  //console.info({ Info: `All cameras`, allCameras })
+  allCameras.forEach(async camera => {
+    //camerasConnectorMap[camera.id] = parseInt(camera.DetectedConnector)
+    let theSourceID = await xapi.Status.Video.Input.Connector[camera.DetectedConnector].SourceId.get()
+    MAP_PTZ_CAMERA_VIDEO_SOURCE_ID[camera.id] = parseInt(theSourceID)
+  })
 
 
   // check for presenterTrack being configured
@@ -811,6 +815,27 @@ async function init() {
         usb_mode = false;
       }
     });
+
+    // register to keep track of when Frames is manually activated.
+    xapi.Status.Cameras.SpeakerTrack.Frames.Status
+      .on(async value => {
+        //console.log(value)
+        if (manualSetFrames) {
+          manualSetFrames = false;
+        }
+        else {
+          if (value === 'Inactive') {
+            forceFramesOn = false;
+            xapi.Command.Cameras.SpeakerTrack.Frames.Deactivate();
+            await sendIntercodecMessage('force_frames_off')
+          }
+          else {
+            forceFramesOn = true;
+            xapi.Command.Cameras.SpeakerTrack.Frames.Activate();
+            await sendIntercodecMessage('force_frames_on')
+          }
+        }
+      });
   }
 
   //  set self-view toggle on custom panel depending on Codec status that might have been set manually
@@ -1490,6 +1515,7 @@ async function handleOverrideWidget(event) {
 
   if (widgetId === 'widget_force_frames' && isOSEleven) {
     console.log("Force frames toggle button selected.....")
+    manualSetFrames = true;
     if (event.Value === 'off') {
       forceFramesOn = false;
       xapi.Command.Cameras.SpeakerTrack.Frames.Deactivate();
@@ -2042,5 +2068,6 @@ xapi.Status.Cameras.PresenterTrack.Status.on(async value => {
   // Update custom panel
   evalPresenterTrack(value);
 });
+
 
 init();
