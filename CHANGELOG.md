@@ -44,3 +44,7 @@
 - Added support for auto-trigger of presenterTrack so that you can keep it on from the custom  
   panel button (including QA mode) and have it stop tracking once you leave the stage and re-acquire  
   when you return to it.
+
+9/28/23 Updates (version 1.0.11)
+
+- Added support for USB Microphones

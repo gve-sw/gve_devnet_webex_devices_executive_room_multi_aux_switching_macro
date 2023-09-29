@@ -13,8 +13,8 @@ or implied.
 *
 * Repository: gve_devnet_webex_devices_executive_room_multi_aux_switching_macro
 * Macro file: main_codec
-* Version: 1.0.10
-* Released: September 28, 2023
+* Version: 1.0.11
+* Released: September 29, 2023
 * Latest RoomOS version tested: 11.8.1.7
 *
 * Macro Author:      	Gerardo Chaves
@@ -108,7 +108,7 @@ const Z8 = { 'primary': 0, 'secondary': 0 } //DO NOT DELETE OR COMMENT ME!!!!!
 const config = {
   monitorMics: [1, 2, 3, 4, 5, 6, 7, 8], // input connectors associated to the microphones being used in the main codec
   ethernetMics: [11, 12, 13, 14], // IDs associated to Ethernet mics: e.j. 12 is Ethernet Mic 1, sub-ID 2
-  usbMics: [], // FUTURE: Mic input connectors associated to the USB microphones being used in the main codec: 101 is USB Mic 1
+  usbMics: [101], // Mic input connectors associated to the USB microphones being used in the main codec: 101 is USB Mic 1
   compositions: [     // Create your array of compositions, not needed if codec is secondary 
     {
       name: 'RoomMain',     // Name for your composition
@@ -980,17 +980,11 @@ async function startAutomation() {
 
   //registering vuMeter event handler for USB mics
   if (config.usbMics.length > 0)
-    micHandler = xapi.event.on('Audio Input Connectors USBC', (event) => {
-      //TODO: watch out for  USB mics and map them
-      // accordingly into the micArrays globals to be able to calculate averages
-      // as I do for analog mics
-      //adding protection for mis-configured mics
-      console.log(event)
-
-      /*
-      if (typeof micArrays[event.id[0]] != 'undefined') {
-        micArrays[event.id[0]].shift();
-        micArrays[event.id[0]].push(event.VuMeter);
+    micHandler = xapi.event.on('Audio Input Connectors USBMicrophone', (event) => {
+      //console.log(event)
+      if (typeof micArrays['10' + event.id] != 'undefined') {
+        micArrays['10' + event.id].shift();
+        micArrays['10' + event.id].push(event.VuMeter);
 
         // checking on manual_mode might be unnecessary because in manual mode,
         // audio events should not be triggered
@@ -999,21 +993,11 @@ async function startAutomation() {
           checkMicLevelsToSwitchCamera();
         }
       }
-      */
-
     });
 
   // start VuMeter monitoring
   console.log("Turning on VuMeter monitoring...")
   for (var i in config.monitorMics) {
-    /*
-    xapi.command('Audio VuMeter Start', {
-      ConnectorId: config.monitorMics[i],
-      ConnectorType: 'Microphone',
-      IntervalMs: 500,
-      Source: 'AfterAEC'
-    });
-    */
     xapi.Command.Audio.VuMeter.Start(
       {
         ConnectorId: config.monitorMics[i],
@@ -1033,7 +1017,7 @@ async function startAutomation() {
           ConnectorId: parseInt(config.ethernetMics[i] / 10),
           ConnectorType: 'Ethernet',
           IncludePairingQuality: 'Off',
-          IntervalMs: 1000, //TODO: change back to 500 after implementing correct handling
+          IntervalMs: 500,
           Source: 'AfterAEC'
         });
     }
@@ -1046,7 +1030,7 @@ async function startAutomation() {
         ConnectorId: config.usbMics[i] - 100,
         ConnectorType: 'USBMicrophone',
         IncludePairingQuality: 'Off',
-        IntervalMs: 1000, //TODO: change back to 500 after implementing correct handling
+        IntervalMs: 500,
         Source: 'AfterAEC'
       });
   }
@@ -1399,7 +1383,6 @@ function topNMicValue() {
   let input = 0;
   let average = 0;
 
-  //TODO: Consider that now micArray keys can contain 10+ (Ethernet) and 100+ (USB) mics to evaluate
 
   //NOTE: micArrays is indexed with string representations of integers that are the mic connector ID
   config.monitorMics.forEach(mic => {
