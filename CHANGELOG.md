@@ -36,3 +36,11 @@
 
 - Added ability to detect when Frames is selected manually on Main and propagate to all Aux codecs
 - Removed need to specify MAP_PTZ_CAMERA_VIDEO_SOURCE_ID, it is now auto-generated
+
+9/28/23 Updates (version 1.0.10)
+
+- Added support for Ethernet Mics like the Mic Pro
+- Fixed error when coming out of Presentertrack mode when no Quadcam
+- Added support for auto-trigger of presenterTrack so that you can keep it on from the custom  
+  panel button (including QA mode) and have it stop tracking once you leave the stage and re-acquire  
+  when you return to it.

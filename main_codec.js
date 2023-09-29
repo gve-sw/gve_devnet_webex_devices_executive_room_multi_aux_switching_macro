@@ -13,8 +13,8 @@ or implied.
 *
 * Repository: gve_devnet_webex_devices_executive_room_multi_aux_switching_macro
 * Macro file: main_codec
-* Version: 1.0.9
-* Released: September 19, 2023
+* Version: 1.0.10
+* Released: September 28, 2023
 * Latest RoomOS version tested: 11.8.1.7
 *
 * Macro Author:      	Gerardo Chaves
@@ -107,6 +107,8 @@ const Z8 = { 'primary': 0, 'secondary': 0 } //DO NOT DELETE OR COMMENT ME!!!!!
 // key in the object but really intend to use the 'connectors' array, please set the value to Z0 to indicate it is not used
 const config = {
   monitorMics: [1, 2, 3, 4, 5, 6, 7, 8], // input connectors associated to the microphones being used in the main codec
+  ethernetMics: [11, 12, 13, 14], // IDs associated to Ethernet mics: e.j. 12 is Ethernet Mic 1, sub-ID 2
+  usbMics: [], // FUTURE: Mic input connectors associated to the USB microphones being used in the main codec: 101 is USB Mic 1
   compositions: [     // Create your array of compositions, not needed if codec is secondary 
     {
       name: 'RoomMain',     // Name for your composition
@@ -307,6 +309,7 @@ config.compositions.forEach(compose => {
   aux_connectors_map[compose.codecIP] = compose.connectors
 });
 
+
 // Validate config settings
 async function validate_config() {
   let hasOverview = true;
@@ -314,28 +317,70 @@ async function validate_config() {
   if (AUX_CODEC_USERNAME == '')
     await disableMacro(`config validation fail: AUX_CODEC credentials must be set.  Current values: AUX_CODEC_USERNAME: ${AUX_CODEC_USERNAME} AUX_CODEC_PASSWORD= ${AUX_CODEC_PASSWORD}`);
 
+  // allow up to 8 analog mics
   let allowedMics = [1, 2, 3, 4, 5, 6, 7, 8];
-  // only allow up to 8 microphones
-  if (config.monitorMics.length > 8 || config.monitorMics.length < 1)
-    await disableMacro(`config validation fail: config.monitorMics can only have between 1 and 8 entries. Current value: ${config.MonitorMics} `);
+
+  let allowedEthernetMics = []
+  // allow up to 8 ethernet mics with 8 lobes each
+  for (let i = 1; i <= 8; i++) {
+    for (let j = 1; j <= 8; j++) {
+      allowedEthernetMics.push((i * 10) + j)
+    }
+  }
+
+  let allowedUSBMics = []
+  // allow up to 4 USB mics
+  for (let i = 1; i <= 4; i++) {
+    allowedUSBMics.push(100 + i)
+  }
+
+  // only allow up to 8 analog microphones
+  if (config.monitorMics.length > 8)
+    await disableMacro(`config validation fail: config.monitorMics can only have up to 8 entries. Current value: ${config.MonitorMics} `);
+  // only allow up to 8 analog microphones
+  if (config.ethernetMics.length > 64)
+    await disableMacro(`config validation fail: config.ethernetMics can only have up to 64 entries. Current value: ${config.ethernetMics} `);
+  // only allow up to 8 analog microphones
+  if (config.usbMics.length > 4)
+    await disableMacro(`config validation fail: config.usbMics can only have up to 4 entries. Current value: ${config.usbMics} `);
+
+  if ((config.monitorMics.length + config.ethernetMics + config.usbMics.length) < 1)
+    await disableMacro(`config validation fail: there must be at least one microphone configured between config.monitorMics, config.ethernetMics and config.usbMics.`);
+
 
   // make sure the mics are within those specified in the monitorMics array
   if (!config.monitorMics.every(r => allowedMics.includes(r)))
-    await disableMacro(`config validation fail: config.monitorMics can only have mic ids 1-8. Current value: ${config.monitorMics} `);
+    await disableMacro(`config validation fail: config.monitorMics can only have analog mic ids 1-8. Current value: ${config.monitorMics} `);
+
+  if (!config.ethernetMics.every(r => allowedEthernetMics.includes(r)))
+    await disableMacro(`config validation fail: config.ethernetMics can only include Ethernet mics 1-8(8 lobes each). Current value: ${config.ethernetMics} `);
+
+  if (!config.usbMics.every(r => allowedUSBMics.includes(r)))
+    await disableMacro(`config validation fail: config.usbMics can only include USB mics 1-4 (values 101-104). Current value: ${config.usbMics} `);
+
 
   // check for duplicates in config.monitorMics
   if (new Set(config.monitorMics).size !== config.monitorMics.length)
     await disableMacro(`config validation fail: config.monitorMics cannot have duplicates. Current value: ${config.monitorMics} `);
+  if (new Set(config.ethernetMics).size !== config.ethernetMics.length)
+    await disableMacro(`config validation fail: config.ethernetMics cannot have duplicates. Current value: ${config.ethernetMics} `);
+  if (new Set(config.usbMics).size !== config.usbMics.length)
+    await disableMacro(`config validation fail: config.usbMics cannot have duplicates. Current value: ${config.usbMics} `);
 
   // Check for falid audience mics configured for the Presenter QA Mode feature
   if (ALLOW_PRESENTER_QA_MODE)
-    if (!PRESENTER_QA_AUDIENCE_MIC_IDS.every(r => config.monitorMics.includes(r)))
-      await disableMacro(`config validation fail: PRESENTER_QA_AUDIENCE_MIC_IDS can only specify values contained in config.monitorMics . Current values config.monitorMics: ${config.monitorMics} PRESENTER_QA_AUDIENCE_MIC_IDS: ${PRESENTER_QA_AUDIENCE_MIC_IDS}`);
+    if (!PRESENTER_QA_AUDIENCE_MIC_IDS.every(r => config.monitorMics.includes(r)) &&
+      !PRESENTER_QA_AUDIENCE_MIC_IDS.every(r => config.ethernetMics.includes(r)) &&
+      !PRESENTER_QA_AUDIENCE_MIC_IDS.every(r => config.usbMics.includes(r)))
+      await disableMacro(`config validation fail: PRESENTER_QA_AUDIENCE_MIC_IDS can only specify values contained in config.monitorMics, config.ethernetMics or config.usbMics . Current values PRESENTER_QA_AUDIENCE_MIC_IDS: ${PRESENTER_QA_AUDIENCE_MIC_IDS}`);
 
 
   hasOverview = false;
   // add value 0 to allowedMics array to include overview composition
-  allowedMics = [0, 1, 2, 3, 4, 5, 6, 7, 8];
+  allowedMics.push(0)
+  // consolidate all allowed mics to check each composition for valid mics.
+  allowedMics = allowedMics.concat(allowedEthernetMics, allowedUSBMics)
+
   // now let's check each composition
   for (let i = 0; i < config.compositions.length; i++) {
     let compose = config.compositions[i];
@@ -573,6 +618,12 @@ let micArrays = {};
 for (var i in config.monitorMics) {
   micArrays[config.monitorMics[i].toString()] = [0, 0, 0, 0];
 }
+for (var i in config.ethernetMics) {
+  micArrays[config.ethernetMics[i].toString()] = [0, 0, 0, 0];
+}
+for (var i in config.usbMics) {
+  micArrays[config.usbMics[i].toString()] = [0, 0, 0, 0];
+}
 let lowWasRecalled = false;
 let lastActiveHighInput = 0;
 let lastSourceDict = { SourceID: '1' }
@@ -606,6 +657,7 @@ let PRESENTER_QA_MODE = false
 
 let presenterTrackConfigured = false;
 let presenterTracking = false;
+let presenterDetected = true;
 let presenterQAKeepComposition = false;
 let qaCompositionTimer = null;
 
@@ -891,7 +943,7 @@ async function startAutomation() {
   // if it is manually turned off while outside of a call it goes back to the correct state
   if (MAIN_CODEC_QUADCAM_SOURCE_ID > 0) xapi.command('Cameras SpeakerTrack Activate').catch(handleError);
 
-  //registering vuMeter event handler
+  //registering vuMeter event handler for analog mics
   micHandler = xapi.event.on('Audio Input Connectors Microphone', (event) => {
     //adding protection for mis-configured mics
     if (typeof micArrays[event.id[0]] != 'undefined') {
@@ -906,16 +958,100 @@ async function startAutomation() {
       }
     }
   });
+
+
+  //registering vuMeter event handler for Ethernet mics
+  if (config.ethernetMics.length > 0)
+    micHandler = xapi.event.on('Audio Input Connectors Ethernet', (event) => {
+      //console.log(event)
+      event.SubId.forEach(submic => {
+        if (typeof micArrays[event.id + submic.id] != 'undefined') {
+          micArrays[event.id + submic.id].shift();
+          micArrays[event.id + submic.id].push(submic.VuMeter);
+          if (manual_mode == false) {
+            // invoke main logic to check mic levels ans switch to correct camera input
+            checkMicLevelsToSwitchCamera();
+          }
+        }
+      })
+
+    });
+
+
+  //registering vuMeter event handler for USB mics
+  if (config.usbMics.length > 0)
+    micHandler = xapi.event.on('Audio Input Connectors USBC', (event) => {
+      //TODO: watch out for  USB mics and map them
+      // accordingly into the micArrays globals to be able to calculate averages
+      // as I do for analog mics
+      //adding protection for mis-configured mics
+      console.log(event)
+
+      /*
+      if (typeof micArrays[event.id[0]] != 'undefined') {
+        micArrays[event.id[0]].shift();
+        micArrays[event.id[0]].push(event.VuMeter);
+
+        // checking on manual_mode might be unnecessary because in manual mode,
+        // audio events should not be triggered
+        if (manual_mode == false) {
+          // invoke main logic to check mic levels ans switch to correct camera input
+          checkMicLevelsToSwitchCamera();
+        }
+      }
+      */
+
+    });
+
   // start VuMeter monitoring
   console.log("Turning on VuMeter monitoring...")
   for (var i in config.monitorMics) {
+    /*
     xapi.command('Audio VuMeter Start', {
       ConnectorId: config.monitorMics[i],
       ConnectorType: 'Microphone',
       IntervalMs: 500,
       Source: 'AfterAEC'
     });
+    */
+    xapi.Command.Audio.VuMeter.Start(
+      {
+        ConnectorId: config.monitorMics[i],
+        ConnectorType: 'Microphone',
+        IncludePairingQuality: 'Off',
+        IntervalMs: 500,
+        Source: 'AfterAEC'
+      });
   }
+
+  let ethernetMicsStarted = [];
+  for (var i in config.ethernetMics) {
+    if (!ethernetMicsStarted.includes(parseInt(config.ethernetMics[i] / 10))) {
+      ethernetMicsStarted.push(parseInt(config.ethernetMics[i] / 10));
+      xapi.Command.Audio.VuMeter.Start(
+        {
+          ConnectorId: parseInt(config.ethernetMics[i] / 10),
+          ConnectorType: 'Ethernet',
+          IncludePairingQuality: 'Off',
+          IntervalMs: 1000, //TODO: change back to 500 after implementing correct handling
+          Source: 'AfterAEC'
+        });
+    }
+  }
+
+
+  for (var i in config.usbMics) {
+    xapi.Command.Audio.VuMeter.Start(
+      {
+        ConnectorId: config.usbMics[i] - 100,
+        ConnectorType: 'USBMicrophone',
+        IncludePairingQuality: 'Off',
+        IntervalMs: 1000, //TODO: change back to 500 after implementing correct handling
+        Source: 'AfterAEC'
+      });
+  }
+
+
   // set toggle button on custom panel to reflect that automation is turned on.
   xapi.command('UserInterface Extensions Widget SetValue', { WidgetId: 'widget_override', Value: 'on' });
 }
@@ -1047,7 +1183,7 @@ async function makeCameraSwitch(input, average) {
       }
     })
 
-    if (presenterTracking) {
+    if (presenterTracking && presenterDetected) {
       // if we have selected Presenter Q&A mode and the codec is currently in presenterTrack mode, invoke
       // that specific camera switching logic contained in presenterQASwitch()
       if (PRESENTER_QA_MODE && !webrtc_mode) presenterQASwitch(input, sourceDict);
@@ -1263,8 +1399,20 @@ function topNMicValue() {
   let input = 0;
   let average = 0;
 
+  //TODO: Consider that now micArray keys can contain 10+ (Ethernet) and 100+ (USB) mics to evaluate
+
   //NOTE: micArrays is indexed with string representations of integers that are the mic connector ID
   config.monitorMics.forEach(mic => {
+    theAverage = averageArray(micArrays[mic.toString()]);
+    averagesMap[mic] = theAverage;
+  })
+
+  config.ethernetMics.forEach(mic => {
+    theAverage = averageArray(micArrays[mic.toString()]);
+    averagesMap[mic] = theAverage;
+  })
+
+  config.usbMics.forEach(mic => {
     theAverage = averageArray(micArrays[mic.toString()]);
     averagesMap[mic] = theAverage;
   })
@@ -1278,12 +1426,15 @@ function topNMicValue() {
 
   // check for auto_top_speakers disabled or less than 2 max_speakers or presenterTracking to just return top mic and value
   if (sorted.length > 0) {
-    if (!auto_top_speakers.enabled || (auto_top_speakers.max_speakers < 2 || presenterTracking)) return [input, average]
-  } else { return [0, 0]; }
+    if (!auto_top_speakers.enabled || (auto_top_speakers.max_speakers < 2 || (presenterTracking && presenterDetected))) return [input, average]
+  }
+  else {
+    return [0, 0];
+  }
 
   // now that we know that auto_top_speakers is enabled and looking for 2 or more top speaker segments,
   // we iterate through averages focusing only on those above MICROPHONEHIGH
-  // and map those to the corresponding connector and remove duplciates
+  // and map those to the corresponding connector and remove duplicates
   // then check to see if more than one top speakers are active to calculate the new layout
   let sorted_high_connectors = []
   let theSet = new Set()
@@ -1373,7 +1524,7 @@ async function recallSideBySideMode() {
           let the_connectors = [...compose.connectors];
           if (REMOVE_EMPTY_SEGMENTS)
             Object.entries(AUX_CODEC_STATUS).forEach(([key, val]) => {
-              console.log(`Evaluating segment for ip ${key} with val = ${val}`)
+              //console.log(`Evaluating segment for ip ${key} with val = ${val}`)
               if (!val.haspeople) {
                 // remove corresponding connectors if nobody in segement!
                 console.log(`Trying to remove segment for ip ${key}`)
@@ -1448,7 +1599,6 @@ async function recallQuadCam() {
   console.log("Recalling QuadCam after manually exiting PresenterTrack mode....")
   pauseSpeakerTrack();
   if (webrtc_mode && !isOSEleven) xapi.Command.Video.Input.MainVideo.Mute();
-  //let currentSTCameraID = QUAD_CAM_ID; 
   let currentSTCameraID = await xapi.Status.Cameras.SpeakerTrack.ActiveConnector.get(); //TODO: Test if it obtains the correct camera ID
   console.log('In recallQuadCam Obtained currentSTCameraID as: ', currentSTCameraID)
   let connectorDict = { SourceId: currentSTCameraID }; xapi.command('Video Input SetMainVideoSource', connectorDict).catch(handleError);
@@ -1582,8 +1732,10 @@ async function handleOverrideWidget(event) {
             //recallFullPresenter();
             xapi.Command.Cameras.PresenterTrack.Set({ Mode: 'Off' });
             PRESENTER_QA_MODE = false;
-            activateSpeakerTrack();
-            recallQuadCam();
+            if (MAIN_CODEC_QUADCAM_SOURCE_ID != 0) {
+              activateSpeakerTrack();
+              recallQuadCam();
+            }
             break;
 
           case '2':
@@ -1975,7 +2127,7 @@ function restartCompositionTimer() {
 
 function onCompositionTimerExpired() {
   presenterQAKeepComposition = false;
-  if (PRESENTER_QA_MODE && !webrtc_mode && presenterTracking) {
+  if (PRESENTER_QA_MODE && !webrtc_mode && (presenterTracking && presenterDetected)) {
     if (!PRESENTER_QA_AUDIENCE_MIC_IDS.includes(lastActiveHighInput)) {
       // restore single presentertrackview because the person still speaking
       // is not an audience member and the timer has expired (could also be due to silence)
@@ -2044,6 +2196,28 @@ xapi.Status.Cameras.SpeakerTrack.Availability
       init();
     }
   });
+
+
+// register to receive Presenter Detected events when in PresenterTrack mode.
+// This way we can disable logic for presentertracking if the presenter steps away
+// from stage and re-engage once they come back. 
+xapi.Status.Cameras.PresenterTrack.PresenterDetected.on(async value => {
+  console.log('Received PT Presenter Detected as: ', value)
+  if (value == 'True') {
+    presenterDetected = true;
+    let presenterSource = await xapi.Config.Cameras.PresenterTrack.Connector.get();
+    let connectorDict = { ConnectorId: presenterSource };
+    console.log("In PresenterDetected handler switching to input with SetMainVideoSource with dict: ", connectorDict)
+    xapi.command('Video Input SetMainVideoSource', connectorDict).catch(handleError);
+    lastSourceDict = connectorDict;
+
+  } else {
+    presenterDetected = false;
+    presenterQAKeepComposition = false;
+    lastSourceDict = { SourceID: '0' }; // forcing a camera switch
+
+  }
+});
 
 // register to keep track of when PresenterTrack is active or not
 xapi.Status.Cameras.PresenterTrack.Status.on(async value => {
