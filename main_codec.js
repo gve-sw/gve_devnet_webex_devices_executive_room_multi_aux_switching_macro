@@ -13,8 +13,8 @@ or implied.
 *
 * Repository: gve_devnet_webex_devices_executive_room_multi_aux_switching_macro
 * Macro file: main_codec
-* Version: 1.0.11
-* Released: September 29, 2023
+* Version: 1.0.12
+* Released: October 4, 2023
 * Latest RoomOS version tested: 11.8.1.7
 *
 * Macro Author:      	Gerardo Chaves
@@ -188,6 +188,23 @@ Z2.primary = 14; Z2.secondary = 13 // These are ok to change
 // preset IDs 11-35 depending on which are configured on the codec. PresetID 30 IS RESERVED FOR USE BY THE MACRO
 //Z3.primary = 5; Z1.secondary =6
 
+// This macro requires preset 30 to be present to be able to set the overview shots. If you don not 
+// manually create it as per instructions and you have a Quadcam,  the macro will create a default preset 30 as a fully zoomed
+// out view of that QuadCam. You can also just specify the values for Pan, tilt and zoom for that macro below and define
+// if the macro actually always re-creates the preset irrespective if already there by setting ALWAYS_CREATE_OV_PRESET to true
+// if you leave OV_PRESET_PAN, OV_PRESET_TILT or OV_PRESET_ZOOM set to 0 the macro will just create the default  
+// zoomed out overview shot if needed.
+// Irrespective of you set the ALWAYS_CREATE_OV_PRESET constant below,  you might want to copy the parameters 
+// of that preset if you manually created it or adjusted it in the command line 
+// into OV_PRESET_PAN, OV_PRESET_TILT and OV_PRESET_ZOOM below in case you loose the preset with an upgrade or reset
+// or if someone manually removes it. You can obtain the current values of that preset from the command line of the codec by issuing
+// this command: xCommand Camera Preset Show PresetId: 30
+const ALWAYS_CREATE_OV_PRESET = false;
+const OV_PRESET_PAN = 0
+const OV_PRESET_TILT = 0
+const OV_PRESET_ZOOM = 0
+
+
 /*
 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 + SECTION 3 - SECTION 3 - SECTION 3 - SECTION 3 - SECTION 3 - SECTION 3 +
@@ -334,6 +351,7 @@ async function validate_config() {
     allowedUSBMics.push(100 + i)
   }
 
+
   // only allow up to 8 analog microphones
   if (config.monitorMics.length > 8)
     await disableMacro(`config validation fail: config.monitorMics can only have up to 8 entries. Current value: ${config.MonitorMics} `);
@@ -347,6 +365,14 @@ async function validate_config() {
   if ((config.monitorMics.length + config.ethernetMics + config.usbMics.length) < 1)
     await disableMacro(`config validation fail: there must be at least one microphone configured between config.monitorMics, config.ethernetMics and config.usbMics.`);
 
+
+  // Check if using USB mic/input, that Echo control is turned on
+  if (config.usbMics.length > 0) {
+    const usbEchoControl = await xapi.Config.Audio.Input.USBInterface[1].EchoControl.Mode.get()
+    if (usbEchoControl != 'On')
+      await disableMacro(`config validation fail: when using USB microphone input, Echo Control needs to be enabled. Only asynchronous USB devices are supported. Please enable and re-activate macro`);
+
+  }
 
   // make sure the mics are within those specified in the monitorMics array
   if (!config.monitorMics.every(r => allowedMics.includes(r)))
@@ -367,7 +393,7 @@ async function validate_config() {
   if (new Set(config.usbMics).size !== config.usbMics.length)
     await disableMacro(`config validation fail: config.usbMics cannot have duplicates. Current value: ${config.usbMics} `);
 
-  // Check for falid audience mics configured for the Presenter QA Mode feature
+  // Check for valid audience mics configured for the Presenter QA Mode feature
   if (ALLOW_PRESENTER_QA_MODE)
     if (!PRESENTER_QA_AUDIENCE_MIC_IDS.every(r => config.monitorMics.includes(r)) &&
       !PRESENTER_QA_AUDIENCE_MIC_IDS.every(r => config.ethernetMics.includes(r)) &&
@@ -577,10 +603,15 @@ async function checkOverviewPreset() {
       if (preObj.PresetId == '30') pre_exists = true;
     })
   }
-  if (!pre_exists) {
-    console.log('Preset 30 does not exist, need to create it....')
+  if (!pre_exists || ALWAYS_CREATE_OV_PRESET) {
+    if (!pre_exists) console.log('Preset 30 does not exist!')
+    console.log('Creating preset 30....')
     if (MAIN_CODEC_QUADCAM_SOURCE_ID != 0) {
-      await xapi.Command.Camera.PositionSet({ CameraId: MAIN_CODEC_QUADCAM_SOURCE_ID, Zoom: 12000 })
+      if (OV_PRESET_PAN != 0 && OV_PRESET_TILT != 0 && OV_PRESET_ZOOM != 0)
+        await xapi.Command.Camera.PositionSet({ CameraId: MAIN_CODEC_QUADCAM_SOURCE_ID, Zoom: OV_PRESET_ZOOM, Tilt: OV_PRESET_TILT, Pan: OV_PRESET_PAN });
+      else
+        await xapi.Command.Camera.PositionSet({ CameraId: MAIN_CODEC_QUADCAM_SOURCE_ID, Zoom: 12000 });
+
       await delay(1000);
       await xapi.Command.Camera.Preset.Store(
         { CameraId: 1, Name: "Overview", PresetId: 30 });
@@ -742,6 +773,7 @@ function evalSelfView(value) {
 
 async function init() {
   console.log('init');
+  xapi.Status.Cameras.SpeakerTrack.State.on(value => console.log("SpeakerTrack state: ", value));
   await xapi.Config.RoomAnalytics.PeoplePresenceDetector.set('On');
   await xapi.Config.RoomAnalytics.PeopleCountOutOfCall.set('On');
 
@@ -931,7 +963,11 @@ async function startAutomation() {
     try {
       xapi.Config.Cameras.SpeakerTrack.DefaultBehavior.set(ST_DEFAULT_BEHAVIOR);
       if (ST_DEFAULT_BEHAVIOR == 'Frames') xapi.Command.Cameras.SpeakerTrack.Frames.Activate();
-      else xapi.Command.Cameras.SpeakerTrack.Frames.Deactivate();
+      else {
+        xapi.Command.Cameras.SpeakerTrack.Frames.Deactivate();
+        if (ST_DEFAULT_BEHAVIOR == 'Closeup') xapi.Config.Cameras.SpeakerTrack.Closeup.set('On');
+      }
+
       const webViewType = await xapi.Status.UserInterface.WebView.Type.get()
       if (webViewType == 'WebRTCMeeting') webrtc_mode = true;
     } catch (e) {

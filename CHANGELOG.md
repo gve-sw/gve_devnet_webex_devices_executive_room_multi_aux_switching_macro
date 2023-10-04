@@ -48,3 +48,9 @@
 9/28/23 Updates (version 1.0.11)
 
 - Added support for USB Microphones
+
+10/4/23 Updates (version 1.0.12)
+
+- Limited USB mic support for when echo control is enabled for those interfaces
+- Added way to store preset 30 pan/tilt/zoom values in macro constants to re-create always or when missing preset
+- Added explicit commands to turn on Closeup mode for speakertracking when selected as default

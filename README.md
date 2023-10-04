@@ -2,6 +2,10 @@
 
 Webex Room Device macro to switch input source to camera pointed in the direction of the area of the room that has audio activity as detected by the table microphones in the zone.
 
+| RoomOs Minimum Version | Webex Cloud | Webex Edge (Hybrid Cloud) | On-Premise | Microsoft Teams Room On Cisco Devices |
+| ---------------------- | ----------- | ------------------------- | ---------- | ------------------------------------- |
+| 11.x                   | Yes         | Yes                       | Yes        | No - API Limitation                   |
+
 Check the [Change Log](CHANGELOG.md) in this repository for the most recent changes and fixes to this macro.
 
 ## Contacts
