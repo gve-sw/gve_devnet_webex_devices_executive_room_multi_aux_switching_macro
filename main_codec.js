@@ -13,8 +13,8 @@ or implied.
 *
 * Repository: gve_devnet_webex_devices_executive_room_multi_aux_switching_macro
 * Macro file: main_codec
-* Version: 1.0.12
-* Released: October 4, 2023
+* Version: 1.0.13
+* Released: October 6, 2023
 * Latest RoomOS version tested: 11.8.1.7
 *
 * Macro Author:      	Gerardo Chaves
@@ -75,15 +75,33 @@ const AUX_CODEC_PASSWORD = 'password';
 const USE_ST_BG_MODE = true;
 
 const CODEC_MAIN = 1, CODEC_AUX = 2, CODEC_NONE = 0
+
+
+// CAMERA / MICROPHONE ZONE PRESET OBJECTS (Z1 - Z8)
+// This section is used if you have one or two PTZ cameras (either Precision 60 or PTZ 4K),
+// and you want to define up to 8 microphone zones that will be serviced by Pan Tilt Zoom cameras.
+// This can be in combination with one or more Quad Cameras, or without any Quad Cameras.
+// The maximum number of PTZ Microphone Zones is 8. If you have one Quad Camera, it will use one of your mic inputs,
+// and if you have multiple Quad Cameras (using Aux codecs), they will use multiple mic inputs. This leaves you with 7 or less for PTZ cameras.
+// FOR EACH PTZ MICROPHONE ZONE (UP TO 8) YOU MUST DEFINE AT LEAST A PRIMARY CAMERA PRESET ID.
+// If you have two PTZ cameras, you can define a primary and a secondary camera for each microphone zone.
+// The reason: if Camera "A" is in use already, you will want to use Camera "B" for the next shot,
+// so that the far end does not see camera motion, which could be distracting/dizzying.
+// WARNING: Do not delete Z0 even if you do not intend to use camera zones, it is needed to initialize the "last camera zone used" global.
+// You can define as many camera preset objects as needed up to 8, using the ZN naming convention.
+// If you do not have any PTZ cameras connected to the codec, simply leave Z1 and Z2 defined as below as examples but
+// do not use them in your compositions
+// NOTE: If you do not have a secondary preset for a zone, just use the same as the primary as the code needs that 'secondary' key present
 const Z0 = { 'primary': 0, 'secondary': 0 } //DO NOT DELETE OR COMMENT ME!!!!!
-const Z1 = { 'primary': 0, 'secondary': 0 } //DO NOT DELETE OR COMMENT ME!!!!!
-const Z2 = { 'primary': 0, 'secondary': 0 } //DO NOT DELETE OR COMMENT ME!!!!!
-const Z3 = { 'primary': 0, 'secondary': 0 } //DO NOT DELETE OR COMMENT ME!!!!!
-const Z4 = { 'primary': 0, 'secondary': 0 } //DO NOT DELETE OR COMMENT ME!!!!!
-const Z5 = { 'primary': 0, 'secondary': 0 } //DO NOT DELETE OR COMMENT ME!!!!!
-const Z6 = { 'primary': 0, 'secondary': 0 } //DO NOT DELETE OR COMMENT ME!!!!!
-const Z7 = { 'primary': 0, 'secondary': 0 } //DO NOT DELETE OR COMMENT ME!!!!!
-const Z8 = { 'primary': 0, 'secondary': 0 } //DO NOT DELETE OR COMMENT ME!!!!!
+
+const Z1 = { 'primary': 12, 'secondary': 12 } // These are ok to change
+const Z2 = { 'primary': 15, 'secondary': 16 } // These are ok to change
+const Z3 = { 'primary': 17, 'secondary': 18 } // These are ok to change
+const Z4 = { 'primary': 0, 'secondary': 0 } // These are ok to change
+const Z5 = { 'primary': 0, 'secondary': 0 } // These are ok to change
+const Z6 = { 'primary': 0, 'secondary': 0 } // These are ok to change
+const Z7 = { 'primary': 0, 'secondary': 0 } // These are ok to change
+const Z8 = { 'primary': 0, 'secondary': 0 } // These are ok to change
 
 // The config constant below contains general microphones and video sources and, alternatively, presetZones for both main
 // and  auxiliary codecs
@@ -165,28 +183,6 @@ const auto_top_speakers = {
 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 */
 
-// CAMERA / MICROPHONE ZONE PRESET OBJECTS (Z1 - Z8)
-// This section is used if you have one or two PTZ cameras (either Precision 60 or PTZ 4K),
-// and you want to define up to 8 microphone zones that will be serviced by Pan Tilt Zoom cameras.
-// This can be in combination with one or more Quad Cameras, or without any Quad Cameras.
-// The maximum number of PTZ Microphone Zones is 8. If you have one Quad Camera, it will use one of your mic inputs,
-// and if you have multiple Quad Cameras (using Aux codecs), they will use multiple mic inputs. This leaves you with 7 or less for PTZ cameras.
-// FOR EACH PTZ MICROPHONE ZONE (UP TO 8) YOU MUST DEFINE AT LEAST A PRIMARY CAMERA PRESET ID.
-// If you have two PTZ cameras, you can define a primary and a secondary camera for each microphone zone.
-// The reason: if Camera "A" is in use already, you will want to use Camera "B" for the next shot,
-// so that the far end does not see camera motion, which could be distracting/dizzying.
-// WARNING: Do not delete Z0 even if you do not intend to use camera zones, it is needed to initialize the "last camera zone used" global.
-// You can define as many camera preset objects as needed up to 8, using the ZN naming convention.
-// If you do not have any PTZ cameras connected to the codec, simply leave Z1 and Z2 defined as below as examples but
-// do not use them in your compositions
-// NOTE: If you do not have a secondary preset for a zone, just use the same as the primary as the code needs that 'secondary' key present
-
-Z1.primary = 11; Z1.secondary = 12 // These are ok to change
-Z2.primary = 14; Z2.secondary = 13 // These are ok to change
-
-// Add camera zones below if needed, up to to Z8 but they can only reference
-// preset IDs 11-35 depending on which are configured on the codec. PresetID 30 IS RESERVED FOR USE BY THE MACRO
-//Z3.primary = 5; Z1.secondary =6
 
 // This macro requires preset 30 to be present to be able to set the overview shots. If you don not 
 // manually create it as per instructions and you have a Quadcam,  the macro will create a default preset 30 as a fully zoomed
@@ -331,9 +327,6 @@ config.compositions.forEach(compose => {
 async function validate_config() {
   let hasOverview = true;
 
-  if (AUX_CODEC_USERNAME == '')
-    await disableMacro(`config validation fail: AUX_CODEC credentials must be set.  Current values: AUX_CODEC_USERNAME: ${AUX_CODEC_USERNAME} AUX_CODEC_PASSWORD= ${AUX_CODEC_PASSWORD}`);
-
   // allow up to 8 analog mics
   let allowedMics = [1, 2, 3, 4, 5, 6, 7, 8];
 
@@ -413,7 +406,7 @@ async function validate_config() {
     // make sure each composition is marked  CODEC_MAIN, CODEC_AUX or CODEC_NONE
     if (![CODEC_MAIN, CODEC_AUX, CODEC_NONE].includes(compose.source)) await disableMacro(`config validation fail: composition named ${compose.name} should have a valid value for key 'source' (CODEC_MAIN, CODEC_AUX or CODEC_NONE).`);
 
-    // make sure if JS_SECONDARY source, then there is a real IP address configured
+    // make sure if CODEC_AUX source, then there is a real IP address configured
     if (compose.source == CODEC_AUX)
       if (!/^(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/.test(compose.codecIP))
         await disableMacro(`config validation fail: Invalid IP address for composition ${compose.name}: ${compose.codecIP} `);
@@ -675,6 +668,8 @@ let manualSetFrames = false;
 let perma_sbs = false; // set to true if you want to start with side by side view always
 
 let micHandler = () => void 0;
+let micHandlerEthernet = () => void 0;
+let micHandlerUSB = () => void 0;
 
 let usb_mode = false;
 let webrtc_mode = false;
@@ -811,8 +806,12 @@ async function init() {
 
   // now creating one connection object that sends to multiple aux codecs
   // but only if there are aux codecs configured, otherwise leave as initialized as {}
-  if (codecIPArray.length > 0)
-    auxCodecs = new GMM.Connect.IP(AUX_CODEC_USERNAME, AUX_CODEC_PASSWORD, codecIPArray)
+  if (codecIPArray.length > 0) {
+    if (AUX_CODEC_USERNAME == '')
+      console.error(`Missing username or base64 encoded credentials for aux codecs.. will not connect aux codecs!`);
+    else
+      auxCodecs = new GMM.Connect.IP(AUX_CODEC_USERNAME, AUX_CODEC_PASSWORD, codecIPArray)
+  }
 
 
   // Stop any VuMeters that might have been left from a previous macro run with a different config.monitorMics constant
@@ -980,25 +979,31 @@ async function startAutomation() {
   if (MAIN_CODEC_QUADCAM_SOURCE_ID > 0) xapi.command('Cameras SpeakerTrack Activate').catch(handleError);
 
   //registering vuMeter event handler for analog mics
-  micHandler = xapi.event.on('Audio Input Connectors Microphone', (event) => {
-    //adding protection for mis-configured mics
-    if (typeof micArrays[event.id[0]] != 'undefined') {
-      micArrays[event.id[0]].shift();
-      micArrays[event.id[0]].push(event.VuMeter);
+  if (config.monitorMics.length > 0) {
+    micHandler();
+    micHandler = () => void 0;
+    micHandler = xapi.event.on('Audio Input Connectors Microphone', (event) => {
+      //adding protection for mis-configured mics
+      if (typeof micArrays[event.id[0]] != 'undefined') {
+        micArrays[event.id[0]].shift();
+        micArrays[event.id[0]].push(event.VuMeter);
 
-      // checking on manual_mode might be unnecessary because in manual mode,
-      // audio events should not be triggered
-      if (manual_mode == false) {
-        // invoke main logic to check mic levels ans switch to correct camera input
-        checkMicLevelsToSwitchCamera();
+        // checking on manual_mode might be unnecessary because in manual mode,
+        // audio events should not be triggered
+        if (manual_mode == false) {
+          // invoke main logic to check mic levels ans switch to correct camera input
+          checkMicLevelsToSwitchCamera();
+        }
       }
-    }
-  });
+    });
+  }
 
 
   //registering vuMeter event handler for Ethernet mics
-  if (config.ethernetMics.length > 0)
-    micHandler = xapi.event.on('Audio Input Connectors Ethernet', (event) => {
+  if (config.ethernetMics.length > 0) {
+    micHandlerEthernet();
+    micHandlerEthernet = () => void 0;
+    micHandlerEthernet = xapi.event.on('Audio Input Connectors Ethernet', (event) => {
       //console.log(event)
       event.SubId.forEach(submic => {
         if (typeof micArrays[event.id + submic.id] != 'undefined') {
@@ -1012,11 +1017,13 @@ async function startAutomation() {
       })
 
     });
-
+  }
 
   //registering vuMeter event handler for USB mics
-  if (config.usbMics.length > 0)
-    micHandler = xapi.event.on('Audio Input Connectors USBMicrophone', (event) => {
+  if (config.usbMics.length > 0) {
+    micHandlerUSB();
+    micHandlerUSB = () => void 0;
+    micHandlerUSB = xapi.event.on('Audio Input Connectors USBMicrophone', (event) => {
       //console.log(event)
       if (typeof micArrays['10' + event.id] != 'undefined') {
         micArrays['10' + event.id].shift();
@@ -1030,6 +1037,7 @@ async function startAutomation() {
         }
       }
     });
+  }
 
   // start VuMeter monitoring
   console.log("Turning on VuMeter monitoring...")
@@ -1094,7 +1102,10 @@ function stopAutomation(reset_source = true) {
   // using proper way to de-register handlers
   micHandler();
   micHandler = () => void 0;
-
+  micHandlerEthernet();
+  micHandlerEthernet = () => void 0;
+  micHandlerUSB();
+  micHandlerUSB = () => void 0;
   // set toggle button on custom panel to reflect that automation is turned off.
   xapi.command('UserInterface Extensions Widget SetValue', { WidgetId: 'widget_override', Value: 'off' });
 

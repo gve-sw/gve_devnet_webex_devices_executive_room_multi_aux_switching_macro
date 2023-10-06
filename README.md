@@ -4,7 +4,7 @@ Webex Room Device macro to switch input source to camera pointed in the directio
 
 | RoomOs Minimum Version | Webex Cloud | Webex Edge (Hybrid Cloud) | On-Premise | Microsoft Teams Room On Cisco Devices |
 | ---------------------- | ----------- | ------------------------- | ---------- | ------------------------------------- |
-| 11.x                   | Yes         | Yes                       | Yes        | No - API Limitation                   |
+| 10.17.1.0              | Yes         | Yes                       | Yes        | No - API Limitation                   |
 
 Check the [Change Log](CHANGELOG.md) in this repository for the most recent changes and fixes to this macro.
 

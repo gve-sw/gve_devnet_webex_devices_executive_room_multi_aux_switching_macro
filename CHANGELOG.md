@@ -54,3 +54,8 @@
 - Limited USB mic support for when echo control is enabled for those interfaces
 - Added way to store preset 30 pan/tilt/zoom values in macro constants to re-create always or when missing preset
 - Added explicit commands to turn on Closeup mode for speakertracking when selected as default
+
+10/6/23 Updates (version 1.0.13)
+
+- Added better vumeter event handler cleanup
+- Moved preset zone settings from section 2 to section 1 of config.
