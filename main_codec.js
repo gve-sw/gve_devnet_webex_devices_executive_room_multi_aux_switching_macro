@@ -184,7 +184,7 @@ const auto_top_speakers = {
 */
 
 
-// This macro requires preset 30 to be present to be able to set the overview shots. If you don not 
+// This macro requires preset 30 to be present to be able to set the overview shots. If you do not 
 // manually create it as per instructions and you have a Quadcam,  the macro will create a default preset 30 as a fully zoomed
 // out view of that QuadCam. You can also just specify the values for Pan, tilt and zoom for that macro below and define
 // if the macro actually always re-creates the preset irrespective if already there by setting ALWAYS_CREATE_OV_PRESET to true
@@ -192,7 +192,7 @@ const auto_top_speakers = {
 // zoomed out overview shot if needed.
 // Irrespective of you set the ALWAYS_CREATE_OV_PRESET constant below,  you might want to copy the parameters 
 // of that preset if you manually created it or adjusted it in the command line 
-// into OV_PRESET_PAN, OV_PRESET_TILT and OV_PRESET_ZOOM below in case you loose the preset with an upgrade or reset
+// into OV_PRESET_PAN, OV_PRESET_TILT and OV_PRESET_ZOOM below in case you lose the preset with an upgrade or reset
 // or if someone manually removes it. You can obtain the current values of that preset from the command line of the codec by issuing
 // this command: xCommand Camera Preset Show PresetId: 30
 const ALWAYS_CREATE_OV_PRESET = false;
@@ -1529,6 +1529,8 @@ function averageArray(arrayIn) {
 }
 
 async function recallSideBySideMode() {
+
+  if (presenterTracking) return; //TODO: more extensive testing of presenterTracking scenarios here
   //first we need to clear out the lastActivePTZCameraZone vars since we want to make sure
   // that after SideBySideMode is called, the next call to switchToVideoZone() does actually force
   // a switch

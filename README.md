@@ -35,6 +35,12 @@ In that scenario, the first QuadCam is connected to the main
 codec (typically a Webex Codec Pro) and the second one to the auxiliary codec (typically a Webex Codec Plus) which in turn has it's HDMI 1
 video output connected to the main codec into it's HDMI 2 input.
 
+Other layouts can be supported with this macro, including "Campfire" configurations:
+
+![IMAGES/campfire.png](IMAGES/campfire.png)
+
+In that scenario, one of the QuadCams in the center "island" is conected to the Main CodecPro whereas the others are connected to auxiliary Codecs that in turn are connected each to one of the other QuadCams to manage it and send the video feed from it to the Main CodecPro.
+
 If you only have one Webex Codec and will not be trying to use 2 QuadCams, you can just use one of the macros ('main_codec.js') on
 that codec to control any allowed combination 4K PTZ cameras, a Cisco SpeakerTrack 60 camera array or a QuadCam camera.
 
