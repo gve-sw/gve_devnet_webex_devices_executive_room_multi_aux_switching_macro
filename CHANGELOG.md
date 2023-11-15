@@ -59,3 +59,7 @@
 
 - Added better vumeter event handler cleanup
 - Moved preset zone settings from section 2 to section 1 of config.
+
+11/14/23 Updates (version 1.0.14)
+
+- Added support for presets in overview shot

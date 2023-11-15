@@ -13,9 +13,9 @@ or implied.
 *
 * Repository: gve_devnet_webex_devices_executive_room_multi_aux_switching_macro
 * Macro file: main_codec
-* Version: 1.0.13
-* Released: October 6, 2023
-* Latest RoomOS version tested: 11.8.1.7
+* Version: 1.0.14
+* Released: November 14, 2023
+* Latest RoomOS version tested: 11.10.1.8
 *
 * Macro Author:      	Gerardo Chaves
 *                    	Technical Solutions Architect
@@ -121,8 +121,10 @@ const Z8 = { 'primary': 0, 'secondary': 0 } // These are ok to change
 // - 'layout' specified the Layout to use to arrange the input connectors specified in the 'connectors' array. 
 // This can be Prominent , Equal or PIP
 // - 'presetZone' is an optional field that can be used instead of the 'connectors' array to specify a preset "zone"
-// to use for that particular composition. Preset zones are explained in section 2 below. If you leave  a 'presetZone'
+// to use for that particular composition. If you leave  a 'presetZone'
 // key in the object but really intend to use the 'connectors' array, please set the value to Z0 to indicate it is not used
+// NOTE: There is an additional feature for the Overview composition where you can specify and array of camera preset IDs in 
+// as the value for hte 'presetZone' key if you wish to use presets in overview compositions. More details below
 const config = {
   monitorMics: [1, 2, 3, 4, 5, 6, 7, 8], // input connectors associated to the microphones being used in the main codec
   ethernetMics: [11, 12, 13, 14], // IDs associated to Ethernet mics: e.j. 12 is Ethernet Mic 1, sub-ID 2
@@ -156,13 +158,27 @@ const config = {
       presetZone: Z0 // use a camera preset zone (Z1, Z2, Z3, etc..) instead of a layout with specific connectors.
     },
     { //IMPORTANT: There needs to at least one overview composition with mics: [0].
+      // NOTE: if you wish to show several presets in a composition or a combination of presets and 
+      // non-preset camera or video inputs for Aux codecs, specify the presets to use in the presetZone key below
+      // as an array (i.e. [11,12]) but also include the video connector ID for the cameras for those 
+      // presets in the connectors array below in the right order so the macro knows how to lay them out in the composition
+      // (i.e. connectors:[2,3,1,4] if the connectorID for the camera associated for preset 11 is 2, 
+      // the connectorID for the camera associated for preset 12 is 3 and you want to also include input from quadcam
+      // at connector 1 and video from tieline from secondary in connector 4 as the overview shot.)
+      // When specifying an array as the presetZone value, remember those are preset IDs, not preset zones. 
       name: 'Overview',  // The name used here will show up in the selector box in the custom Camera Control Panel if you configure more than one
       codecIP: '',       // only the first 4 'overview' type compositions you set up will be offered in the selector box in the custom Camera Control Panel
       mics: [0],      // IMPORTANT: There needs to at least one overview composition with mics: [0]
       connectors: [3, 1, 2], // Specify here the video inputs and order to use to compose the "side by side" view. It can just be one. 
       source: CODEC_NONE, // Use CODEC_NONE for these types of 'overview' compositions. 
       layout: 'Equal',       // Layout to use
-      presetZone: Z0 // use a camera preset zone (Z1, Z2, Z3, etc..) instead of a layout with specific connectors.
+      presetZone: Z0 // use a camera preset zone (Z1, Z2, Z3, etc..) instead of a layout with specific connectors or an array of presets IDs
+      // NOTE: do not set preset to just one integer if you want more than one video input to be layed out, if you only
+      // have one preset but still want to specify other connectos in the layout then specify and array of just one preset
+      // (i.e. preset: [11] if only preset 11 will be used and connectors:[2,1,4] if you want to compose it input from the
+      // camera doing the preset with connectors 1 and 4 as well.)
+      // Setting preset to just one integeter will force it to ignore the connectors value
+      // Set presetZone to Z0 if no presets or preset zones will be used. 
     }
   ]
 }
@@ -781,8 +797,10 @@ async function init() {
   //console.info({ Info: `All cameras`, allCameras })
   allCameras.forEach(async camera => {
     //camerasConnectorMap[camera.id] = parseInt(camera.DetectedConnector)
-    let theSourceID = await xapi.Status.Video.Input.Connector[camera.DetectedConnector].SourceId.get()
-    MAP_PTZ_CAMERA_VIDEO_SOURCE_ID[camera.id] = parseInt(theSourceID)
+    if (camera.DetectedConnector > 0) {
+      let theSourceID = await xapi.Status.Video.Input.Connector[camera.DetectedConnector].SourceId.get()
+      MAP_PTZ_CAMERA_VIDEO_SOURCE_ID[camera.id] = parseInt(theSourceID)
+    }
   })
 
 
@@ -1547,13 +1565,26 @@ async function recallSideBySideMode() {
     if (compose.mics.includes(0))
       if (compose.name == currOverviewComp) {
         console.log(`SideBySide setting to composition = ${compose.name}`);
-        if (('presetZone' in compose) && (compose.presetZone != Z0)) {
+        let sourceDict = {}
+        if (('presetZone' in compose) && (compose.presetZone != Z0) && typeof compose.presetZone == 'number') {
           console.log(`SideBySide setting Video Input to preset [${compose.preset}] `);
           if (MAIN_CODEC_QUADCAM_SOURCE_ID > 0) pauseSpeakerTrack();
           switchToVideoZone(compose.presetZone);
         }
         else {
           let the_connectors = [...compose.connectors];
+
+          if (compose.presetZone != Z0 && typeof compose.presetZone != 'number') { // if not single preset zone, it is a list of presets we need to evaluate
+            console.log(`SideBySide setting Video Input to multiple preset as seen in [${compose.presetZone}] `);
+            // when multiple presets, activate them and then proceed to create the sourceDict and apply as if no
+            // presets
+            compose.presetZone.forEach(async thePresetID => {
+              sourceDict = { PresetId: thePresetID };
+              await xapi.Command.Camera.Preset.Activate(sourceDict);
+            })
+          }
+
+
           if (REMOVE_EMPTY_SEGMENTS)
             Object.entries(AUX_CODEC_STATUS).forEach(([key, val]) => {
               //console.log(`Evaluating segment for ip ${key} with val = ${val}`)
@@ -1589,7 +1620,7 @@ async function recallSideBySideMode() {
           }
           else {
             console.log(`Setting Video Input to connectors [${the_connectors}] and Layout: ${compose.layout}`);
-            let sourceDict = { ConnectorId: the_connectors, Layout: compose.layout }
+            sourceDict = { ConnectorId: the_connectors, Layout: compose.layout }
             xapi.Command.Video.Input.SetMainVideoSource(sourceDict);
             xapi.command('Camera Preset Activate', { PresetId: 30 }).catch(handleError);
 
