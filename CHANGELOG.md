@@ -63,3 +63,8 @@
 11/14/23 Updates (version 1.0.14)
 
 - Added support for presets in overview shot
+
+11/19/23 Updates (version 1.0.15)
+
+- Added support for presets in top-N compositions
+- corrected situation with handling of primary and secondary presets in presetZone where presets where being invokced multiple times and switching between primary and secondary

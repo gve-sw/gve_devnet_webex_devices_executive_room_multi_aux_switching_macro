@@ -13,8 +13,8 @@ or implied.
 *
 * Repository: gve_devnet_webex_devices_executive_room_multi_aux_switching_macro
 * Macro file: main_codec
-* Version: 1.0.14
-* Released: November 14, 2023
+* Version: 1.0.15
+* Released: November 19, 2023
 * Latest RoomOS version tested: 11.10.1.8
 *
 * Macro Author:      	Gerardo Chaves
@@ -172,13 +172,13 @@ const config = {
       connectors: [3, 1, 2], // Specify here the video inputs and order to use to compose the "side by side" view. It can just be one. 
       source: CODEC_NONE, // Use CODEC_NONE for these types of 'overview' compositions. 
       layout: 'Equal',       // Layout to use
-      presetZone: Z0 // use a camera preset zone (Z1, Z2, Z3, etc..) instead of a layout with specific connectors or an array of presets IDs
+      presetZone: Z0 // use a camera preset zone (Z1, Z2, Z3, etc..) or array of specific preset IDs  
       // NOTE: do not set preset to just one integer if you want more than one video input to be layed out, if you only
       // have one preset but still want to specify other connectos in the layout then specify and array of just one preset
       // (i.e. preset: [11] if only preset 11 will be used and connectors:[2,1,4] if you want to compose it input from the
       // camera doing the preset with connectors 1 and 4 as well.)
-      // Setting preset to just one integeter will force it to ignore the connectors value
-      // Set presetZone to Z0 if no presets or preset zones will be used. 
+      // Setting preset to just one integeter will force it to ignore the connectors value and interpret it as a preset zone (Z1, Z2, Z3, etc..)
+      // Set presetZone to Z0 if no presets nor preset zones will be used. 
     }
   ]
 }
@@ -189,6 +189,9 @@ const auto_top_speakers = {
   enabled: false, // if set to true, the macro will dynamically create composition of top speaker segments
   max_speakers: 2, // specify maximum number of top speaker segments to compose
   default_connectors: [1, 2, 3, 4], // specify connectos to use for top speakers composition in order
+  // if you have presetZones in any of the compositions, be sure to add the connector ID where the camera
+  // associated with the primary preset of that presetZone into the default_connectrs array in the right
+  // position you want it. 
   layout: 'Equal'
 }
 
@@ -313,13 +316,33 @@ const minOS11Version = '11.0.0.4';
 
 var top_speakers_connectors = [];
 var mic_connectors_map = {}
+var connectors_preset_map = {}
 var currOverviewComp = "";
 var overviewCompNames = []
 
+
+var comp_sets_array = [] // array of top speaker compositions to keep track of for last speaker value
+
+var aux_connectors_map = {}
+
 // create a map of microphones to corresponding main video connector
 config.compositions.forEach(compose => {
-  compose.mics.forEach(mic => {
-    mic_connectors_map[mic] = compose.connectors[0];
+  compose.mics.forEach(async mic => {
+    if (mic > 0)
+      if (compose.presetZone == Z0)
+        mic_connectors_map[mic] = compose.connectors[0];
+      else {
+        //extract connector ID corresponding to primary camera of this zone go put into the mic_connectors_map
+        // so that later we can keep track of which presets to invoke before showing the top N view
+        let thePresetId = compose.presetZone['primary'];
+        let presetCamId = await getPresetCamera(thePresetId);
+        let presetCamConnector = await xapi.Status.Cameras.Camera[presetCamId].DetectedConnector.get().catch(handleError);;
+        mic_connectors_map[mic] = parseInt(presetCamConnector);
+        // keep track of which video connector was added here due to a primary preset in a presetZone
+        // so we can set that preset before showing the top N composition
+        connectors_preset_map[presetCamConnector] = thePresetId;
+
+      }
   })
   // populate array of overview composition names and populate currOverviewComp 
   // with first composition defined
@@ -329,9 +352,7 @@ config.compositions.forEach(compose => {
       if (currOverviewComp == "") currOverviewComp = compose.name;
     }
 });
-var comp_sets_array = [] // array of top speaker compositions to keep track of for last speaker value
 
-var aux_connectors_map = {}
 
 // create a map of microphones to corresponding main video connector
 config.compositions.forEach(compose => {
@@ -803,7 +824,6 @@ async function init() {
     }
   })
 
-
   // check for presenterTrack being configured
   let enabledGet = await xapi.Config.Cameras.PresenterTrack.Enabled.get()
   presenterTrackConfigured = (enabledGet == 'True') ? true : false;
@@ -1213,6 +1233,8 @@ async function makeCameraSwitch(input, average) {
 
   if (perma_sbs) input = 0; // if permanent side by side is selected in the custom panel, just always show the overview
 
+  lastActiveHighInput = input;
+
   if (input > 0) {
     let sourceDict = { ConnectorID: 0 } // Just initialize
     let initial_sourceDict = { ConnectorID: 0 } // to be able to compare later
@@ -1271,16 +1293,33 @@ async function makeCameraSwitch(input, average) {
         lastActivePTZCameraZoneCamera = '0';
       }
       else {
-        switchToVideoZone(sourceDict.PresetZone);
+        switchToVideoZone(sourceDict.PresetZone, true);
       }
     }
   } else if (input < 0) {
     // Here we switch to the previously prepared composition that corresponds to 
     // the top N active speakers. 
-    // TODO: See how this would work with preset zones... might need to modify to call switchToVideoZone() for each zone involved
-    // in the resulting top N composition making sure it does not mess up anything else... then call SetMainVideoSource!
+
+
+    // first, just like in recallSidebySideMode(), we have to clear out the last Active values
+    // so after a top N composition it actually switches to the next composition or source
+    lastActivePTZCameraZoneObj = Z0;
+    lastActivePTZCameraZoneCamera = '0';
+    lastActiveHighInput = 0;
+
     console.log(`Switching to auto-generated top N speakers composition.`);
     console.log(`Setting Video Input to connectors [${top_speakers_connectors}]  and Layout: ${auto_top_speakers.layout}`)
+    // first check to see if any connectors calculated on the top N list before
+    // correspond to any presets in presetZones to activate them
+    top_speakers_connectors.forEach(async connector => {
+      if (connector in connectors_preset_map) {
+        let thePresetID = connectors_preset_map[connector]
+        console.log(`Connector ${connector} is associated to presetID ${thePresetID}, setting preset first.`);
+        let sourceDict = { PresetId: thePresetID };
+        await xapi.Command.Camera.Preset.Activate(sourceDict);
+      }
+    })
+    // now we can go ahead and show the top N composition
     xapi.Command.Video.Input.SetMainVideoSource(
       {
         ConnectorId: top_speakers_connectors,
@@ -1292,15 +1331,14 @@ async function makeCameraSwitch(input, average) {
   // send required messages to auxiliary codec that also turns on speakertrack over there
   await sendIntercodecMessage('automatic_mode');
 
-  lastActiveHighInput = input;
   restartNewSpeakerTimer();
 }
 
-async function switchToVideoZone(selectedSource) {
+async function switchToVideoZone(selectedSource, changeVideoSource) {
   // The mic input mapped to a PTZ camera is to be selected, first check that camera zone was already being used
-  if (lastActivePTZCameraZoneObj == selectedSource) {
+  if (lastActivePTZCameraZoneObj == selectedSource && changeVideoSource) {
     // same camera zone as before, so we do not want to change the inUse value of that zone object (keep it inUse=true)
-    console.log("Still using same camera zone, no need to Activate camera preset.")
+    console.log("Still using same camera zone, no need to Activate camera preset and switch main video input.")
   }
   else {
     var selectedSourcePrimaryCamID = '';
@@ -1326,13 +1364,14 @@ async function switchToVideoZone(selectedSource) {
     }
     // instruct the codec to now use the correct camera preset
     console.log('Switching to preset ID: ' + thePresetId + ' which uses camera: ' + lastActivePTZCameraZoneCamera);
-    xapi.Command.Camera.Preset.Activate({ PresetId: thePresetId });
+    await xapi.Command.Camera.Preset.Activate({ PresetId: thePresetId });
 
-    // now set main video source to where the camera is connected
-    setTimeout(function () {
+    // now set main video source to where the camera is connected if instructed
+    if (changeVideoSource) setTimeout(function () {
       setMainVideoSource(thePresetVideoSource);
     }, VIDEO_SOURCE_SWITCH_WAIT_TIME);
 
+    return thePresetVideoSource;
   }
 
 }
@@ -1354,9 +1393,7 @@ function setMainVideoSource(thePresetVideoSource) {
 
 // function to actually switch the camera input when in presentertrack Q&A mode
 async function presenterQASwitch(input, sourceDict) {
-  //TODO: if sourceDict contains a presetZone, I will need to do something similar to what is in switchToVideoZone()
-  // or even call that function but to select the preset to show only on the part of the composition for the 
-  // audience member asking the question if possible. 
+
   if (!(PRESENTER_QA_AUDIENCE_MIC_IDS.includes(input))) {
     // Once the presenter starts talkin, we need to initiate composition timer
     // to remove composition only after the configured time has passed.
@@ -1366,30 +1403,17 @@ async function presenterQASwitch(input, sourceDict) {
 
     if ('PresetZone' in sourceDict) {
       let selectedSource = sourceDict.PresetZone;
-      var selectedSourcePrimaryCamID = '';
-      var selectedSourceSecondaryCamID = '';
-      var thePresetId = 0;
-      var thePresetVideoSource = 0;
-      selectedSourcePrimaryCamID = await getPresetCamera(selectedSource['primary']);
-      thePresetId = selectedSource['primary'];
-      thePresetVideoSource = MAP_PTZ_CAMERA_VIDEO_SOURCE_ID[selectedSourcePrimaryCamID]
-
-      // Extract extra values from preset
-      const value = await xapi.Command.Camera.Preset.Show({ PresetId: selectedSource['primary'] });
-      // set the camera with the preset values without activating the present since we need to compose
-      // it in
-      //TODO: Check to see if Lens parameter is needed below
-      xapi.Command.Camera.PositionSet(
-        { CameraId: selectedSourcePrimaryCamID, Focus: value.Focus, Pan: value.Pan, Tilt: value.Tilt, Zoom: value.Zoom });
+      // invoke switchToVideoZone but just to invoke the right preset and return connector ID, not actually switch
+      let thePresetVideoSource = await switchToVideoZone(selectedSource, false);
       // Replace the sourceDict that had the preset with just the correct Connector ID for the rest of the logic
-      sourceDict = { 'ConnectorId': thePresetVideoSource } //TODO: test if this is the correct ConnectorID
+      sourceDict = { 'ConnectorId': [thePresetVideoSource] }
 
     }
 
 
     // here we need to compose presenter with other camera where someone is speaking
     if ('ConnectorId' in sourceDict && sourceDict['ConnectorId'].length == 1) {
-      let presenterSource = await xapi.Config.Cameras.PresenterTrack.Connector.get();
+      let presenterSource = parseInt(await xapi.Config.Cameras.PresenterTrack.Connector.get());
       let connectorDict = { ConnectorId: [presenterSource, sourceDict['ConnectorId'][0]] };
       console.log("Trying to use this for connector dict in presenterQASwitch(): ", connectorDict)
 
@@ -1569,7 +1593,7 @@ async function recallSideBySideMode() {
         if (('presetZone' in compose) && (compose.presetZone != Z0) && typeof compose.presetZone == 'number') {
           console.log(`SideBySide setting Video Input to preset [${compose.preset}] `);
           if (MAIN_CODEC_QUADCAM_SOURCE_ID > 0) pauseSpeakerTrack();
-          switchToVideoZone(compose.presetZone);
+          switchToVideoZone(compose.presetZone, true);
         }
         else {
           let the_connectors = [...compose.connectors];
