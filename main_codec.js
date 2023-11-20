@@ -189,9 +189,9 @@ const auto_top_speakers = {
   enabled: false, // if set to true, the macro will dynamically create composition of top speaker segments
   max_speakers: 2, // specify maximum number of top speaker segments to compose
   default_connectors: [1, 2, 3, 4], // specify connectos to use for top speakers composition in order
-  // if you have presetZones in any of the compositions, be sure to add the connector ID where the camera
-  // associated with the primary preset of that presetZone into the default_connectrs array in the right
-  // position you want it. 
+  // if you have presetZones in any of the compositions that could end up bein selected for the top N composition, 
+  // be sure to add the connector ID where the camera associated with the primary preset of that presetZone 
+  // into the default_connectors array in the right position you want it. 
   layout: 'Equal'
 }
 
