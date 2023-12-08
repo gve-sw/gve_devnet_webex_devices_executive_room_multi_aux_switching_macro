@@ -107,6 +107,9 @@ That should bring up the following Panel where you can select the behavior desir
 
 If you have correctly configured an "overview" composition, you can control when that view is shown from the custom camera control panel by toggling the "Side by side" switch between Overview (when there is no voice activity detected in the room or the microphones are muted) and "Always". If set to "Always", a side by side composition will be send to the far end that includes the camera associated to the microphones that are detecting audio activity with SpeakerTrack turned and a the other camera will be showing the overview camera preset.
 
+NOTE: If you need to replace a codec that was already configured with this macro and wish to preserve the Camera presets, consider using this macro to make a backup of the presets for later restoring:
+https://github.com/wxsd-sales/camera-presets-backup-restore-macros
+
 You can use the "Force Frames" toggle switch to temporarily set the main codec and all Aux codecs to 'Frames' instead of the other variants of SpeakerTrack. When you turn off the toggle, it will go back to whatever you configured in the macro using the ST_DEFAULT_BEHAVIOR constant.
 
 During a call, you can use the PresenterTrack custom panel button to turn on PresenterTrack with our without the Q&A mode option:
