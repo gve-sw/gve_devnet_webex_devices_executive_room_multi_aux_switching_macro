@@ -68,3 +68,7 @@
 
 - Added support for presets in top-N compositions
 - corrected situation with handling of primary and secondary presets in presetZone where presets where being invokced multiple times and switching between primary and secondary
+
+12/19/23 Updates (version 1.0.16)
+
+- added support for temporarily disabling macro by sending a text message into the system: EXEC_SW_MACRO_DISABLE . It can be re-enabled by sending this text message: EXEC_SW_MACRO_ENABLE

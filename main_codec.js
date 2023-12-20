@@ -13,8 +13,8 @@ or implied.
 *
 * Repository: gve_devnet_webex_devices_executive_room_multi_aux_switching_macro
 * Macro file: main_codec
-* Version: 1.0.15
-* Released: November 19, 2023
+* Version: 1.0.16
+* Released: December 19, 2023
 * Latest RoomOS version tested: 11.10.1.8
 *
 * Macro Author:      	Gerardo Chaves
@@ -700,6 +700,7 @@ let lastActivePTZCameraZoneCamera = '0';
 
 let manualSetFrames = false;
 
+let tempDisable = false;
 
 
 let perma_sbs = false; // set to true if you want to start with side by side view always
@@ -883,10 +884,15 @@ async function init() {
 
   // register handler for Call Successful
   xapi.Event.CallSuccessful.on(async () => {
-    console.log("Starting new call timer...");
-    await startAutomation();
-    recallSideBySideMode();
-    startInitialCallTimer();
+    if (!tempDisable) {
+      console.log("Starting new call timer...");
+      await startAutomation();
+      recallSideBySideMode();
+      startInitialCallTimer();
+    }
+    else {
+      console.log("Ignoring new call event due to tempDisable==true");
+    }
   });
 
   // register handler for Call Disconnect
@@ -907,11 +913,14 @@ async function init() {
     xapi.Status.UserInterface.WebView.Type.on(async (value) => {
       if (value === 'WebRTCMeeting') {
         webrtc_mode = true;
-
-        console.log("Starting automation due to WebRTCMeeting event...");
-        startAutomation();
-        startInitialCallTimer();
-
+        if (!tempDisable) {
+          console.log("Starting automation due to WebRTCMeeting event...");
+          startAutomation();
+          startInitialCallTimer();
+        }
+        else {
+          console.log("WebRTCMeeting event received, but tempDisable==false ...");
+        }
       } else {
         webrtc_mode = false;
         if (!usb_mode) {
@@ -1961,66 +1970,85 @@ async function updateUSBModeConfig() {
 GMM.Event.Receiver.on(event => {
   const usb_mode_reg = /USB_Mode_Version_[0-9]*.*/gm
   if ((typeof event) != 'string')
-    if (event.Source.Id == 'localhost') {
-      // we are evaluating a local event, first check to see if from the USB Mode macro
-      if (usb_mode_reg.test(event.App)) {
-        if (event.Type == 'Error') {
-          console.error(event)
-        } else {
-          switch (event.Value) {
-            case 'Initialized':
-              console.warn(`USB mode initialized...`)
-              updateUSBModeConfig();
-              break;
-            case 'EnteringWebexMode': case 'Entering_Default_Mode': case 'EnteringDefaultMode':
-              console.warn(`You are entering Webex Mode`)
-              //Run code here when Default Mode starts to configure
-              break;
-            case 'WebexModeStarted': case 'DefaultModeStarted':
-              console.warn(`System is in Default Mode`)
-              stopAutomation();
-              usb_mode = false;
-              // always tell the other codec when your are in or out of a call
-              //otherCodec.status('CALL_DISCONNECTED').post();
+    if ('RawMessage' in event) {
+      // here we are receiving a RawMessage as marked by GMM, so it could be from an external controller
+      //first check to ese if it is a custom MIC_ACTIVE Event
+      let theEventValue = event.RawMessage;
 
-              break;
-            case 'enteringUSBMode':
-              console.warn(`You are entering USB Mode`)
-              //Run code here when USB Mode starts to configure
-              break;
-            case 'USBModeStarted':
-              console.warn(`System is in Default Mode`)
-              startAutomation();
-              usb_mode = true;
-              // always tell the other codec when your are in or out of a call
-              //otherCodec.status('CALL_CONNECTED').post();
+      if (theEventValue == 'EXEC_SW_MACRO_DISABLE') {
+        console.log('Received EXEC_SW_MACRO_DISABLE')
+        tempDisable = true;
+      }
 
-              break;
-            default:
-              break;
+      if (theEventValue == 'EXEC_SW_MACRO_ENABLE') {
+        console.log('Received EXEC_SW_MACRO_ENABLE')
+        tempDisable = false;
+      }
+
+    } else
+      if (event.Source.Id == 'localhost') {
+        // we are evaluating a local event, first check to see if from the USB Mode macro
+        if (usb_mode_reg.test(event.App)) {
+          if (event.Type == 'Error') {
+            console.error(event)
+          } else {
+            switch (event.Value) {
+              case 'Initialized':
+                console.warn(`USB mode initialized...`)
+                updateUSBModeConfig();
+                break;
+              case 'EnteringWebexMode': case 'Entering_Default_Mode': case 'EnteringDefaultMode':
+                console.warn(`You are entering Webex Mode`)
+                //Run code here when Default Mode starts to configure
+                break;
+              case 'WebexModeStarted': case 'DefaultModeStarted':
+                console.warn(`System is in Default Mode`)
+                stopAutomation();
+                usb_mode = false;
+                // always tell the other codec when your are in or out of a call
+                //otherCodec.status('CALL_DISCONNECTED').post();
+
+                break;
+              case 'enteringUSBMode':
+                console.warn(`You are entering USB Mode`)
+                //Run code here when USB Mode starts to configure
+                break;
+              case 'USBModeStarted':
+                if (!tempDisable) {
+                  console.warn(`System is in Default Mode`)
+                  startAutomation();
+                  usb_mode = true;
+                  // always tell the other codec when your are in or out of a call
+                  //otherCodec.status('CALL_CONNECTED').post();
+                } else {
+                  console.warn(`Entering USB Mode, but tempDisable==true `)
+                }
+                break;
+              default:
+                break;
+            }
           }
         }
+        else {
+          console.debug({
+            Message: `Received Message from ${event.App} and was not processed`
+          })
+        }
       }
-      else {
-        console.debug({
-          Message: `Received Message from ${event.App} and was not processed`
-        })
-      }
-    }
-    else
-      switch (event.Value) {
-        case "VTC-1_OK":
-          handleCodecOnline(event.Source?.IPv4);
-          break;
-        case "aux_has_people":
-          handleCodecPeopleReport(event.Source?.IPv4, true)
-          break;
-        case "aux_no_people":
-          handleCodecPeopleReport(event.Source?.IPv4, false)
-          break;
-        default:
-          break;
-      }
+      else
+        switch (event.Value) {
+          case "VTC-1_OK":
+            handleCodecOnline(event.Source?.IPv4);
+            break;
+          case "aux_has_people":
+            handleCodecPeopleReport(event.Source?.IPv4, true)
+            break;
+          case "aux_no_people":
+            handleCodecPeopleReport(event.Source?.IPv4, false)
+            break;
+          default:
+            break;
+        }
 
 })
 
