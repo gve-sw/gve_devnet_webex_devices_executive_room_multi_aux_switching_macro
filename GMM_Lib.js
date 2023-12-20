@@ -29,9 +29,9 @@ or implied.
  *                            been merged in GMM_Lib version 1.7.0
  * 
  * Released: May 16, 2022
- * Updated: May 18, 2023 || 5:01pm EST
+ * Updated: Nov 8, 2023 
  * 
- * Version: 1.9.7_InDev
+ * Version: 1.9.702
  * 
  * GMM.Config.adjustHTTPClientTimeout
  * 
@@ -47,7 +47,7 @@ export const GMM = {
     MacroName: _main_macro_name()
   },
   DevConfig: {
-    version: '1.9.7_InDev'
+    version: '1.9.702'
   },
   DevAssets: {
     queue: [],
@@ -561,6 +561,10 @@ export const GMM = {
         this.Payload['Value'] = message
         return this
       }
+      passDeviceId() {
+        this.passId = true
+        return this
+      }
       passToken(newToken = '') {
         if (newToken != '') {
           this.Payload.Source['Auth'] = newToken
@@ -693,8 +697,15 @@ export const GMM = {
     Receiver: {
       on: function (callback) {
         xapi.Event.Message.Send.on(event => {
-          let response = JSON.parse(event.Text)
-          callback(response)
+          let response = {};
+          try {
+            response = JSON.parse(event.Text)
+            callback(response)
+          }
+          catch (error) {
+            console.debug(`GMM_Lib: Received unformatted message: ${event.Text} ... converting to local status message. `)
+            callback({ RawMessage: event.Text })
+          }
         })
       },
       once: function (callback) {
