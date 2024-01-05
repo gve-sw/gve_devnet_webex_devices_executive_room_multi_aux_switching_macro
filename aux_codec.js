@@ -13,9 +13,9 @@ or implied.
 *
 * Repository: gve_devnet_webex_devices_executive_room_multi_aux_switching_macro
 * Macro file: aux_codec
-* Version: 1.0.16
-* Released: December 19, 2023
-* Latest RoomOS version tested: 11.10.1.8
+* Version: 1.0.17
+* Released: January 5, 2024
+* Latest RoomOS version tested: 11.11.1.9
 *
 * Macro Author:      	Gerardo Chaves
 *                    	Technical Solutions Architect

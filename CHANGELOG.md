@@ -72,3 +72,8 @@
 12/19/23 Updates (version 1.0.16)
 
 - added support for temporarily disabling macro by sending a text message into the system: EXEC_SW_MACRO_DISABLE . It can be re-enabled by sending this text message: EXEC_SW_MACRO_ENABLE
+
+1/5/24 Updates (version 1.0.17)
+
+- added support for external microphones (i.e. commands sent by a Crestron to indicate which microphone is the active one)
+- added small delay in setting video source after invoking preset 30 for overview mode to eliminate slight "intermediate" state of the camera that was noticeable when overview shot was invoked.

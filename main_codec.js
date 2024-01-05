@@ -13,9 +13,9 @@ or implied.
 *
 * Repository: gve_devnet_webex_devices_executive_room_multi_aux_switching_macro
 * Macro file: main_codec
-* Version: 1.0.16
-* Released: December 19, 2023
-* Latest RoomOS version tested: 11.10.1.8
+* Version: 1.0.17
+* Released: January 5, 2024
+* Latest RoomOS version tested: 11.11.1.9
 *
 * Macro Author:      	Gerardo Chaves
 *                    	Technical Solutions Architect
@@ -103,32 +103,53 @@ const Z6 = { 'primary': 0, 'secondary': 0 } // These are ok to change
 const Z7 = { 'primary': 0, 'secondary': 0 } // These are ok to change
 const Z8 = { 'primary': 0, 'secondary': 0 } // These are ok to change
 
-// The config constant below contains general microphones and video sources and, alternatively, presetZones for both main
-// and  auxiliary codecs
-// For the 'monitorMics' key, specify an array of all input connectors on the codec pro that are being used to make 
-// camera switching decisions. 
-// The value for the 'compositions' key is an array of composition objects with values corresponding to the following keys:
-// - 'name' The name of the composition. This is just used as an internal reference in the macro and is printing in the console logs
-// - 'codecIP' is the IPv4 IP address of the Auxiliary codec that is the source that a particular composition will use.
-// and the 'source' field is set to CODEC_AUX.  The 'connectors' array for this composition should contain the ID of the 
-// connector of the tie line coming from that auxiliary codec into the main codec.
-// - 'mics' is the array of active microphones that are considered to switch to that particular composition
-// - 'connectors' are the video connector IDs to use in conjunction with the 'layout' value to set the main video input
-// when any microphone in the 'mics' array is the most active. 
-// - 'source' should be set to CODEC_AUX if any of the video connectors in the 'connectors' array correspond to tie lines coming in
-// from an Auxiliary codec. If not, it should be set to CODEC_MAIN unless the composition corresponds to the Overview 
-// compositions where the 'mics' array is set to [0] in which case it should be set to CODEC_NONE
-// - 'layout' specified the Layout to use to arrange the input connectors specified in the 'connectors' array. 
-// This can be Prominent , Equal or PIP
-// - 'presetZone' is an optional field that can be used instead of the 'connectors' array to specify a preset "zone"
-// to use for that particular composition. If you leave  a 'presetZone'
-// key in the object but really intend to use the 'connectors' array, please set the value to Z0 to indicate it is not used
-// NOTE: There is an additional feature for the Overview composition where you can specify and array of camera preset IDs in 
-// as the value for hte 'presetZone' key if you wish to use presets in overview compositions. More details below
+/*
+The config constant below contains general microphones and video sources and, alternatively, presetZones for both main
+and  auxiliary codecs
+
+The monitorMics, ethernetMics and usbMics arrays refer to locally connected microphones for which the macro will monitor vuMeter levels. 
+    The ID range for monitorMics is 1-8 since it refers to the physical analog mic input connectors on the codec.
+    The ID range for ethernetMics is 11-18, 21-28 an so forth until 81-88 since we support up to 8 ethernet mics with 8 
+    sub-ids each. So, for example , ethernec mic ID 12 as specified in this array refers to Ethernet Mic 1, sub-ID 2
+    The ID range for usbMics is 101-104 an maps to USB mic IDs 1-4 even though at the moment just one USB Mic input is supported (101)
+    The externalMics array refers to externally connected microphones where a controller sends the codec text messages over SSH or 
+    serial interface indicating which of those external microphones is currently active. 
+    The text message should be sent by the controller in the format “MIC_ACTIVE_XX” where XX is a distinct 
+    “microphone” id from 01 o 99. We are reserving 00 to indicate that there is relative silence in the room or that mute is active.
+    Even though the receiving of unformatted “MIC_ACTIVE_XX” type strings is supported, for better logging it is strongly 
+    recommended that the controller sends the message wrapped as an object as shown in the following examples. 
+    sending the MIC_ACTIVE_01 message via serial: 
+    xCommand Message Send Text: "{\x5C"App\x5C":\x5C"Crestron\x5C",\x5C"Source\x5C":{},\x5C"Type\x5C":\x5C"Command\x5C",\x5C"Value\x5C":\x5C"MIC_ACTIVE_01\x5C"}"\x0D\x0A  
+    sending the MIC_ACTIVE_01 message via SSH:  
+    xCommand Message Send Text: "{\"App\":\"Crestron\",\"Source\":{},\"Type\":\"Command\",\"Value\":\"MIC_ACTIVE_01\"}" 
+    NOTE: Any combination of microphone types specified in the monitorMics, ethernetMics , usbMics and externalMics is supported by
+    the macro, but given the differences in echo cancellation processing performed by the different microphone categories it is strongly
+    advised to stick to only one type of microphone to use for each installation. 
+
+The value for the 'compositions' key is an array of composition objects with values corresponding to the following keys:
+- 'name' The name of the composition. This is just used as an internal reference in the macro and is printing in the console logs
+- 'codecIP' is the IPv4 IP address of the Auxiliary codec that is the source that a particular composition will use.
+and the 'source' field is set to CODEC_AUX.  The 'connectors' array for this composition should contain the ID of the 
+connector of the tie line coming from that auxiliary codec into the main codec.
+- 'mics' is the array of active microphones that are considered to switch to that particular composition. These could be analog (1-8), ethernet (11-14, 21-24, etc), usb (101) or external (901-999) microphones
+- 'connectors' are the video connector IDs to use in conjunction with the 'layout' value to set the main video input
+when any microphone in the 'mics' array is the most active. 
+- 'source' should be set to CODEC_AUX if any of the video connectors in the 'connectors' array correspond to tie lines coming in
+from an Auxiliary codec. If not, it should be set to CODEC_MAIN unless the composition corresponds to the Overview 
+compositions where the 'mics' array is set to [0] in which case it should be set to CODEC_NONE
+- 'layout' specified the Layout to use to arrange the input connectors specified in the 'connectors' array. 
+This can be Prominent , Equal or PIP
+- 'presetZone' is an optional field that can be used instead of the 'connectors' array to specify a preset "zone"
+to use for that particular composition. If you leave  a 'presetZone'
+key in the object but really intend to use the 'connectors' array, please set the value to Z0 to indicate it is not used
+NOTE: There is an additional feature for the Overview composition where you can specify and array of camera preset IDs in 
+as the value for hte 'presetZone' key if you wish to use presets in overview compositions. More details below
+*/
 const config = {
-  monitorMics: [1, 2, 3, 4, 5, 6, 7, 8], // input connectors associated to the microphones being used in the main codec
-  ethernetMics: [11, 12, 13, 14], // IDs associated to Ethernet mics: e.j. 12 is Ethernet Mic 1, sub-ID 2
-  usbMics: [101], // Mic input connectors associated to the USB microphones being used in the main codec: 101 is USB Mic 1
+  monitorMics: [], // input connectors associated to the microphones being used in the main codec. Example: [1, 2, 3, 4, 5, 6, 7, 8]
+  ethernetMics: [], // IDs associated to Ethernet mics: e.j. 12 is Ethernet Mic 1, sub-ID 2. Example:  [11, 12, 13, 14]
+  usbMics: [], // Mic input connectors associated to the USB microphones being used in the main codec: 101 is USB Mic 1. Example: [101]
+  externalMics: [], //  (ex: [901, 902]) input ids associated to microphones connected to an external controller received as message format MIC_ACTIVE_XX where XX is an external mic id 01-99
   compositions: [     // Create your array of compositions, not needed if codec is secondary 
     {
       name: 'RoomMain',     // Name for your composition
@@ -382,6 +403,13 @@ async function validate_config() {
   }
 
 
+  let allowedExternalMics = []
+  // allow up to  99 External mics
+  for (let i = 1; i <= 99; i++) {
+    allowedExternalMics.push(900 + i)
+  }
+
+
   // only allow up to 8 analog microphones
   if (config.monitorMics.length > 8)
     await disableMacro(`config validation fail: config.monitorMics can only have up to 8 entries. Current value: ${config.MonitorMics} `);
@@ -391,9 +419,11 @@ async function validate_config() {
   // only allow up to 8 analog microphones
   if (config.usbMics.length > 4)
     await disableMacro(`config validation fail: config.usbMics can only have up to 4 entries. Current value: ${config.usbMics} `);
+  if (config.externalMics.length > 99)
+    await disableMacro(`config validation fail: config.externalMics can only have up to 99 entries. Current value: ${config.ethernetMics} `);
 
-  if ((config.monitorMics.length + config.ethernetMics + config.usbMics.length) < 1)
-    await disableMacro(`config validation fail: there must be at least one microphone configured between config.monitorMics, config.ethernetMics and config.usbMics.`);
+  if ((config.monitorMics.length + config.ethernetMics + config.usbMics.length + config.externalMics.length) < 1)
+    await disableMacro(`config validation fail: there must be at least one microphone configured between config.monitorMics, config.ethernetMics , config.usbMics and config.externalMics.`);
 
 
   // Check if using USB mic/input, that Echo control is turned on
@@ -414,6 +444,9 @@ async function validate_config() {
   if (!config.usbMics.every(r => allowedUSBMics.includes(r)))
     await disableMacro(`config validation fail: config.usbMics can only include USB mics 1-4 (values 101-104). Current value: ${config.usbMics} `);
 
+  if (!config.externalMics.every(r => allowedExternalMics.includes(r)))
+    await disableMacro(`config validation fail: config.externalMics can only include external mics 01-99 (values 901-999). Current value: ${config.externalMics} `);
+
 
   // check for duplicates in config.monitorMics
   if (new Set(config.monitorMics).size !== config.monitorMics.length)
@@ -427,15 +460,16 @@ async function validate_config() {
   if (ALLOW_PRESENTER_QA_MODE)
     if (!PRESENTER_QA_AUDIENCE_MIC_IDS.every(r => config.monitorMics.includes(r)) &&
       !PRESENTER_QA_AUDIENCE_MIC_IDS.every(r => config.ethernetMics.includes(r)) &&
+      !PRESENTER_QA_AUDIENCE_MIC_IDS.every(r => config.externalMics.includes(r)) &&
       !PRESENTER_QA_AUDIENCE_MIC_IDS.every(r => config.usbMics.includes(r)))
-      await disableMacro(`config validation fail: PRESENTER_QA_AUDIENCE_MIC_IDS can only specify values contained in config.monitorMics, config.ethernetMics or config.usbMics . Current values PRESENTER_QA_AUDIENCE_MIC_IDS: ${PRESENTER_QA_AUDIENCE_MIC_IDS}`);
+      await disableMacro(`config validation fail: PRESENTER_QA_AUDIENCE_MIC_IDS can only specify values contained in config.monitorMics, config.ethernetMics, CONF.config.ethernetMics or config.usbMics . Current values PRESENTER_QA_AUDIENCE_MIC_IDS: ${PRESENTER_QA_AUDIENCE_MIC_IDS}`);
 
 
   hasOverview = false;
   // add value 0 to allowedMics array to include overview composition
   allowedMics.push(0)
   // consolidate all allowed mics to check each composition for valid mics.
-  allowedMics = allowedMics.concat(allowedEthernetMics, allowedUSBMics)
+  allowedMics = allowedMics.concat(allowedEthernetMics, allowedUSBMics, allowedExternalMics)
 
   // now let's check each composition
   for (let i = 0; i < config.compositions.length; i++) {
@@ -449,12 +483,13 @@ async function validate_config() {
         await disableMacro(`config validation fail: Invalid IP address for composition ${compose.name}: ${compose.codecIP} `);
 
     // only allow up to 8 mics and at least 1 specified for each composition
-    if (compose.mics.length > 8 || compose.mics.length < 1)
-      await disableMacro(`config validation fail: mics for each composition can only have between 1 and 8 entries. Current value: ${compose.mics} `);
+    if (compose.mics.length > 175 || compose.mics.length < 1)
+      await disableMacro(`config validation fail: mics for each composition can only have between 1 and 175 entries. Current value: ${compose.mics} `);
+
 
     // make sure the mics are within those specified in the monitorMics array, plus 0 for overview
     if (!compose.mics.every(r => allowedMics.includes(r)))
-      await disableMacro(`config validation fail: mics for each composition can only have mic ids 0-8. Current value: ${compose.mics} `);
+      await disableMacro(`config validation fail: mics for each composition can only have mic ids 0-8, 11-88, 101-104 or 901-999. Current value: ${compose.mics} `);
 
     // keep track that we have at least one composition with mics [0] to check at the end and that it is CODEC_NONE sourced
     if (JSON.stringify(compose.mics) == JSON.stringify([0]) && compose.source == CODEC_NONE) hasOverview = true;
@@ -1216,6 +1251,66 @@ function checkMicLevelsToSwitchCamera() {
   }
 }
 
+
+
+function processExternalMicHandler(activeMic) {
+  // activeMic should contain a string with a external mic ID (00-99) passed along by the 
+  // controller via MIC_ACTIVE_XX for us to trigger the switching functionality
+  // we need to prepend the '9' character to it before parsing it into the integer for 
+  // input so we can indicate it is an external mic specified in the CONF.config.externaMics array 
+  let input = parseInt('9' + activeMic)
+  let average = 0;
+  if (allowCameraSwitching) {
+    // simulate valide average to trigger switch since controller already made decision
+    if (input > 900) {
+      average = MICROPHONEHIGH + 1;
+    }
+    else {
+      average = MICROPHONELOW - 1;
+      input = 1; // need to simulate that there were valid mic readings
+    }
+
+    // someone is speaking
+    if (average > MICROPHONEHIGH) {
+      // start timer to prevent Side-by-Side mode too quickly
+      restartSideBySideTimer();
+      if (input > 900) {
+        lowWasRecalled = false;
+        // no one was talking before
+        if (lastActiveHighInput === 0) {
+          makeCameraSwitch(input, average);
+        }
+        // the same person is talking
+        else if (lastActiveHighInput === input) {
+          restartNewSpeakerTimer();
+        }
+        // a different person is talking
+        else if (lastActiveHighInput !== input) {
+          if (allowNewSpeaker) {
+            makeCameraSwitch(input, average);
+          }
+        }
+      }
+    }
+    // no one is speaking
+    else if (average < MICROPHONELOW) {
+      // only trigger if enough time has elapsed since someone spoke last
+      if (allowSideBySide) {
+        if (input > 0 && !lowWasRecalled) {
+          lastActiveHighInput = 0;
+          lowWasRecalled = true;
+          console.log("-------------------------------------------------");
+          console.log("External Mic Low Triggered");
+          console.log("-------------------------------------------------");
+          recallSideBySideMode();
+        }
+      }
+    }
+
+  }
+}
+
+
 // function to actually switch the camera input
 async function makeCameraSwitch(input, average) {
   if (input > 0) {
@@ -1642,7 +1737,7 @@ async function recallSideBySideMode() {
 
           if (webrtc_mode && the_connectors.length > 1) { //WebRTC mode does not support composing yet even in RoomOS11
             console.log(`Overview layout specifies connectors [${the_connectors}] and Layout: ${compose.layout}`);
-            console.log(`No support for composing multiple inputs when in WebRTC, setting prest 30 only... `)
+            console.log(`No support for composing multiple inputs when in WebRTC, setting preset 30 only... `)
             xapi.command('Camera Preset Activate', { PresetId: 30 }).catch(handleError);
             // now set main video source to where the camera is connected
             let thePresetCameraID = await getPresetCamera(30)
@@ -1654,8 +1749,9 @@ async function recallSideBySideMode() {
           else {
             console.log(`Setting Video Input to connectors [${the_connectors}] and Layout: ${compose.layout}`);
             sourceDict = { ConnectorId: the_connectors, Layout: compose.layout }
-            xapi.Command.Video.Input.SetMainVideoSource(sourceDict);
-            xapi.command('Camera Preset Activate', { PresetId: 30 }).catch(handleError);
+
+            await xapi.command('Camera Preset Activate', { PresetId: 30 }).catch(handleError);
+            setTimeout(function () { xapi.Command.Video.Input.SetMainVideoSource(sourceDict) }, VIDEO_SOURCE_SWITCH_WAIT_TIME)
 
             const payload = { EditMatrixOutput: { sources: sourceDict["ConnectorId"] } };
             setTimeout(function () {
@@ -1967,14 +2063,19 @@ async function updateUSBModeConfig() {
 }
 
 
-GMM.Event.Receiver.on(event => {
+GMM.Event.Receiver.on(async event => {
   const usb_mode_reg = /USB_Mode_Version_[0-9]*.*/gm
   if ((typeof event) != 'string')
     if ('RawMessage' in event) {
       // here we are receiving a RawMessage as marked by GMM, so it could be from an external controller
       //first check to ese if it is a custom MIC_ACTIVE Event
       let theEventValue = event.RawMessage;
-
+      let activeMic = '';
+      if (theEventValue.slice(0, 11) == 'MIC_ACTIVE_') {
+        console.warn("Received unformatted MIC_ACTIVE_XX message: ", event.RawMessage)
+        activeMic = theEventValue.substring(11);
+        processExternalMicHandler(activeMic);
+      }
       if (theEventValue == 'EXEC_SW_MACRO_DISABLE') {
         console.log('Received EXEC_SW_MACRO_DISABLE')
         tempDisable = true;
@@ -2035,7 +2136,27 @@ GMM.Event.Receiver.on(event => {
           })
         }
       }
-      else
+      else if (event.App == 'Crestron') { //message is coming from an external controller that identifies as 'Crestron'
+        console.warn("Received from app Crestron: ", event.Value)
+        if (event.Type == 'Error') {
+          console.error(event)
+        } else {
+          //first check to ese if it is a custom MIC_ACTIVE Event
+          let theEventValue = event.Value;
+          let activeMic = '';
+          if (theEventValue.slice(0, 11) == 'MIC_ACTIVE_') {
+            activeMic = theEventValue.substring(11);
+            processExternalMicHandler(activeMic);
+          }
+          else {
+            console.debug({
+              Message: `Received Message from ${event.App} was not processed`
+            })
+          }
+        }
+
+      }
+      else //this is coming from an aux codec or some other external source
         switch (event.Value) {
           case "VTC-1_OK":
             handleCodecOnline(event.Source?.IPv4);
