@@ -13,8 +13,8 @@ or implied.
 *
 * Repository: gve_devnet_webex_devices_executive_room_multi_aux_switching_macro
 * Macro file: main_codec
-* Version: 1.0.17
-* Released: January 5, 2024
+* Version: 1.0.18
+* Released: January 9, 2024
 * Latest RoomOS version tested: 11.11.1.9
 *
 * Macro Author:      	Gerardo Chaves
@@ -722,6 +722,7 @@ for (var i in config.usbMics) {
 }
 let lowWasRecalled = false;
 let lastActiveHighInput = 0;
+let QAlastActiveHighInput = 0;
 let lastSourceDict = { SourceID: '1' }
 let allowSideBySide = true;
 let sideBySideTimer = null;
@@ -1336,7 +1337,7 @@ async function makeCameraSwitch(input, average) {
   // aux codec.
 
   if (perma_sbs) input = 0; // if permanent side by side is selected in the custom panel, just always show the overview
-
+  QAlastActiveHighInput = lastActiveHighInput
   lastActiveHighInput = input;
 
   if (input > 0) {
@@ -1503,7 +1504,7 @@ async function presenterQASwitch(input, sourceDict) {
     // to remove composition only after the configured time has passed.
     restartCompositionTimer();
   }
-  else if (lastActiveHighInput != input) {
+  else if (QAlastActiveHighInput != input) {
 
     if ('PresetZone' in sourceDict) {
       let selectedSource = sourceDict.PresetZone;

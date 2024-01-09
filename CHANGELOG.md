@@ -77,3 +77,7 @@
 
 - added support for external microphones (i.e. commands sent by a Crestron to indicate which microphone is the active one)
 - added small delay in setting video source after invoking preset 30 for overview mode to eliminate slight "intermediate" state of the camera that was noticeable when overview shot was invoked.
+
+1/9/24 Updates (version 1.0.18)
+
+- fixed issue with QA mode that was preventing it from working given an earlier optimization of the makeCameraSwitch() function to better support PTZ zones
