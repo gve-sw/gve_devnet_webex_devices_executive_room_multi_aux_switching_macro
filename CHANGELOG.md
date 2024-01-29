@@ -81,3 +81,7 @@
 1/9/24 Updates (version 1.0.18)
 
 - fixed issue with QA mode that was preventing it from working given an earlier optimization of the makeCameraSwitch() function to better support PTZ zones
+
+1/29/24 Changes (version 1.0.19)
+
+- Added delay in startup code to deal with timing changes in RoomOS 11.12 that could cause GMM_Lib to error out when started right after system restart.
