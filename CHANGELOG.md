@@ -85,3 +85,7 @@
 1/29/24 Changes (version 1.0.19)
 
 - Added delay in startup code to deal with timing changes in RoomOS 11.12 that could cause GMM_Lib to error out when started right after system restart.
+
+8/19/24 Changes (version 1.0.20)
+
+- Added ability to specify serial number for Microphone Pros so that the refernece ID in the macro stays the same even if MicPros are deregistered and reregistered with the codec.

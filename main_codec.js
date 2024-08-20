@@ -13,9 +13,9 @@ or implied.
 *
 * Repository: gve_devnet_webex_devices_executive_room_multi_aux_switching_macro
 * Macro file: main_codec
-* Version: 1.0.19
-* Released: January 29, 2024
-* Latest RoomOS version tested: 11.11.1.9
+* Version: 1.0.20
+* Released: August 19, 2024
+* Latest RoomOS version tested: 11.19.1.7
 *
 * Macro Author:      	Gerardo Chaves
 *                    	Technical Solutions Architect
@@ -148,6 +148,14 @@ as the value for hte 'presetZone' key if you wish to use presets in overview com
 const config = {
   monitorMics: [], // input connectors associated to the microphones being used in the main codec. Example: [1, 2, 3, 4, 5, 6, 7, 8]
   ethernetMics: [], // IDs associated to Ethernet mics: e.j. 12 is Ethernet Mic 1, sub-ID 2. Example:  [11, 12, 13, 14]
+  /* Fill out the ethMicSerialsToIDMap object below if Ethernet Mics are being assigned different IDs every time the codec reboots. This is only for the Mic ID, not the Sub ID
+  For example, use  { 'FOC2701H61C': '1', 'FOC2701H63C': '2' } to make sure that the Ethernet Mic with serial FOC2701H61C always 
+  is assigned to Ethernet Mic ID 1 and the one with serial FOC2701H63C is always assigned to Ethernet Mic ID 2
+  Specifying a value for object ethMicSerialsToIDMap is optional. If you do not need it, just leave it as an empty object.
+  If used, *all* Ethernet Mic serials must be included in the object since it will first de-register all Ethernet Mics it finds
+  and then re-register only those specified in the map.
+  */
+  ethMicSerialsToIDMap: {}, // optional map of Ethernet Mic serials to Ethernet Mic IDs. 
   usbMics: [], // Mic input connectors associated to the USB microphones being used in the main codec: 101 is USB Mic 1. Example: [101]
   externalMics: [], //  (ex: [901, 902]) input ids associated to microphones connected to an external controller received as message format MIC_ACTIVE_XX where XX is an external mic id 01-99
   compositions: [     // Create your array of compositions, not needed if codec is secondary 
@@ -340,6 +348,10 @@ var mic_connectors_map = {}
 var connectors_preset_map = {}
 var currOverviewComp = "";
 var overviewCompNames = []
+// initializing ethMicIDMapConfigToActual and ethMicIDMapActualToConfig in case that 
+// config.ethMicSerialsToIDMap does not get configured so that the Ethernet Mic main IDs are used 1-1
+var ethMicIDMapConfigToActual = { '1': '1', '2': '2', '3': '3', '4': '4', '5': '5', '6': '6', '7': '7', '8': '8' };
+var ethMicIDMapActualToConfig = { '1': '1', '2': '2', '3': '3', '4': '4', '5': '5', '6': '6', '7': '7', '8': '8' };
 
 
 var comp_sets_array = [] // array of top speaker compositions to keep track of for last speaker value
@@ -660,6 +672,9 @@ async function disableMacro(reason = 'N/A') {
 
 async function checkOverviewPreset() {
   console.log('Checking for existence of preset 30 for Camera 1')
+  //TODO: need to change logic below so it does not check for preset 30 only on Camera 1 
+  // because some customers do not even have a quadcam and might choose to set preset 30
+  // on some other P60 or PTZ camera
   let pre_list = await xapi.Command.Camera.Preset.List(
     { CameraId: 1 })
   let pre_exists = false;
@@ -840,6 +855,69 @@ function evalSelfView(value) {
   }
 }
 
+
+async function ethernetMicGetMACFromSerial(theSerial) {
+  const connectedDevices = await xapi.Status.Peripherals.ConnectedDevice.get()
+  //console.log(connectedDevices)
+  let theMac = '';
+  connectedDevices.forEach(deviceEntry => {
+    if (deviceEntry.SerialNumber == theSerial) theMac = deviceEntry.ID;
+  }
+  )
+  return theMac
+}
+
+
+function ethActualID(configID) {
+  if ((Object.keys(config.ethMicSerialsToIDMap).length > 0)) {
+    return parseInt(ethMicIDMapConfigToActual[configID.toString()]);
+  }
+  else {
+    return configID
+  }
+}
+
+function ethConfigID(actualID) {
+  if ((Object.keys(config.ethMicSerialsToIDMap).length > 0)) {
+    return parseInt(ethMicIDMapActualToConfig[actualID.toString()]);
+  }
+  else {
+    return actualID
+  }
+}
+
+async function createCurrentEthMicIDMap() {
+  // first discover all Ethernet Mic IDs and their corresponding MAC addresses
+  let ethCurrentMicMactoID = {};
+  let ethInputCon = await xapi.Status.Audio.Input.Connectors.Ethernet.get();
+  //console.log(`Initial connectors: ${ethInputCon}`);
+  ethInputCon.forEach(async inputCon => {
+    if (inputCon.StreamName != '') {
+      ethCurrentMicMactoID[inputCon.StreamName] = inputCon.id;
+    }
+  })
+
+  // Now we iterate through our mapping 
+  for (const [theSerial, theID] of Object.entries(config.ethMicSerialsToIDMap)) {
+    console.log(`key: ${theSerial} value: ${theID}`);
+
+    //first figure out the MAC address of the microphone from the serial number
+    let theMac = '';
+    theMac = await ethernetMicGetMACFromSerial(theSerial);
+
+    if (theMac != '') {
+      // populate micCurrentIDtoSerial below so that now you can obtain the "correct" ID to use
+      // by translating it with this: ethMicSerialsToIDMap[micCurrentIDtoSerial[triggeredMicIDStr]]
+      // this returns a character and might need to be converted to an int
+      console.log(`The MAC address of microphone serial ${theSerial} is ${theMac}, creating 2 way maps to translate`)
+      let theCurrentID = ethCurrentMicMactoID[theMac]
+      ethMicIDMapConfigToActual[theID] = theCurrentID;
+      ethMicIDMapActualToConfig[theCurrentID] = theID;
+    } else console.log(`No MAC address for Mic with serial ${theSerial} found, skipping....`)
+  }
+}
+
+
 async function init() {
   console.log('init');
   xapi.Status.Cameras.SpeakerTrack.State.on(value => console.log("SpeakerTrack state: ", value));
@@ -860,6 +938,11 @@ async function init() {
       MAP_PTZ_CAMERA_VIDEO_SOURCE_ID[camera.id] = parseInt(theSourceID)
     }
   })
+
+  // Check to see if a mapping of Ethernet Mic Serials to IDs is defined create 
+  // a new mapping to the IDs specified in config
+  if (Object.keys(config.ethMicSerialsToIDMap).length > 0) await createCurrentEthMicIDMap();
+
 
   // check for presenterTrack being configured
   let enabledGet = await xapi.Config.Cameras.PresenterTrack.Enabled.get()
@@ -1089,9 +1172,9 @@ async function startAutomation() {
     micHandlerEthernet = xapi.event.on('Audio Input Connectors Ethernet', (event) => {
       //console.log(event)
       event.SubId.forEach(submic => {
-        if (typeof micArrays[event.id + submic.id] != 'undefined') {
-          micArrays[event.id + submic.id].shift();
-          micArrays[event.id + submic.id].push(submic.VuMeter);
+        if (typeof micArrays[ethMicIDMapActualToConfig[event.id] + submic.id] != 'undefined') {
+          micArrays[ethMicIDMapActualToConfig[event.id] + submic.id].shift(); //TODO: validate this use of ethMicIDMapActualToConfig keeps the rest of the logic correct
+          micArrays[ethMicIDMapActualToConfig[event.id] + submic.id].push(submic.VuMeter);
           if (manual_mode == false) {
             // invoke main logic to check mic levels ans switch to correct camera input
             checkMicLevelsToSwitchCamera();
@@ -1141,7 +1224,7 @@ async function startAutomation() {
       ethernetMicsStarted.push(parseInt(config.ethernetMics[i] / 10));
       xapi.Command.Audio.VuMeter.Start(
         {
-          ConnectorId: parseInt(config.ethernetMics[i] / 10),
+          ConnectorId: ethActualID(parseInt(config.ethernetMics[i] / 10)), //TODO:check this is the right place to use ethActualID
           ConnectorType: 'Ethernet',
           IncludePairingQuality: 'Off',
           IntervalMs: 500,
