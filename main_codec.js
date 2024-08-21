@@ -1119,6 +1119,10 @@ async function startAutomation() {
   manual_mode = false;
   allowCameraSwitching = true;
 
+  // Check to see if a mapping of Ethernet Mic Serials to IDs is defined create 
+  // a new mapping to the IDs specified in config
+  if (Object.keys(config.ethMicSerialsToIDMap).length > 0) await createCurrentEthMicIDMap();
+
   // presenterTrack cannot be on when we start automation
   if (presenterTrackConfigured) {
     xapi.Command.Cameras.PresenterTrack.Set({ Mode: 'Off' });
