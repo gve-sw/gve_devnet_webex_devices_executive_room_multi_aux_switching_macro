@@ -13,9 +13,9 @@ or implied.
 *
 * Repository: gve_devnet_webex_devices_executive_room_multi_aux_switching_macro
 * Macro file: main_codec
-* Version: 1.0.20
-* Released: August 19, 2024
-* Latest RoomOS version tested: 11.19.1.7
+* Version: 1.0.21
+* Released: May 19, 2025
+* Latest RoomOS version tested: 11.28.1.5
 *
 * Macro Author:      	Gerardo Chaves
 *                    	Technical Solutions Architect
@@ -273,7 +273,7 @@ const MAIN_CODEC_QUADCAM_SOURCE_ID = 1;
 const ST_DEFAULT_BEHAVIOR = 'Closeup'
 
 // If you wish to remove a video input from the overview shot if the Aux codec that 
-// sends it is not reporting anyone in front of the camera, set REMOVE_EMPTY_SEGMENTS to false
+// sends it is not reporting anyone in front of the camera, set REMOVE_EMPTY_SEGMENTS to true
 // this will also apply for the QuadCam in the main codec, but if the logic ends up removing all segments
 // it will actually show them all so the other side sees that there is simply nobobody in the room. 
 // If an Aux codec does not have a camera capable of doing PeopleCount or it is disaled, that codec will always
@@ -660,11 +660,11 @@ function delay(ms) {
 
 async function disableMacro(reason = 'N/A') {
   console.warn(reason)
-  let act = `Disabling [${module.name.replace('./', '')}] in 10 seconds`
+  let act = `Disabling [${_main_macro_name()}] in 10 seconds`
   console.error({ Error: reason, Action: act })
   await xapi.Command.UserInterface.Message.Alert.Display({ Title: '⚠️ Macro Error ⚠️', Text: `${reason}<p>${act}`, Duration: 9 });
   await delay(10000);
-  await xapi.Command.Macros.Macro.Deactivate({ Name: module.name.replace('./', '') });
+  await xapi.Command.Macros.Macro.Deactivate({ Name: _main_macro_name() });
   await delay(100);
   await xapi.Command.Macros.Runtime.Restart();
 }
@@ -704,7 +704,7 @@ async function checkOverviewPreset() {
 
 
 
-const localCallout = new GMM.Connect.Local(module.name.replace('./', ''))
+const localCallout = new GMM.Connect.Local(_main_macro_name())
 
 
 /////////////////////

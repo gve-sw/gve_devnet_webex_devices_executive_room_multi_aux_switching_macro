@@ -89,3 +89,7 @@
 8/19/24 Changes (version 1.0.20)
 
 - Added ability to specify serial number for Microphone Pros so that the refernece ID in the macro stays the same even if MicPros are deregistered and reregistered with the codec.
+
+5/19/25 Changes (version 1.0.21)
+
+- Changed method of obtaining module name CommonJS to ECMAScript given the deprecation of CommonJS in RoomOS.
